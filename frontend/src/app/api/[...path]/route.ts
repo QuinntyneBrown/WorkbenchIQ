@@ -93,6 +93,26 @@ async function proxyRequest(
       const data = await response.json();
       return NextResponse.json(data, { status: response.status });
     } else {
+      // For binary content (PDFs, images, video), use arrayBuffer to
+      // preserve bytes. Using response.text() corrupts binary data and
+      // causes browsers to show "password protected" for PDFs.
+      const isBinary = /^(application\/(pdf|octet-stream)|image\/|video\/|audio\/)/.test(contentType);
+      if (isBinary) {
+        const buffer = await response.arrayBuffer();
+        const responseHeaders: Record<string, string> = {
+          'Content-Type': contentType,
+        };
+        const contentLength = response.headers.get('content-length');
+        if (contentLength) responseHeaders['Content-Length'] = contentLength;
+        const contentDisposition = response.headers.get('content-disposition');
+        if (contentDisposition) responseHeaders['Content-Disposition'] = contentDisposition;
+        const acceptRanges = response.headers.get('accept-ranges');
+        if (acceptRanges) responseHeaders['Accept-Ranges'] = acceptRanges;
+        return new NextResponse(buffer, {
+          status: response.status,
+          headers: responseHeaders,
+        });
+      }
       const text = await response.text();
       return new NextResponse(text, {
         status: response.status,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { 
   Upload, 
   Plus, 
@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { usePersona } from '@/lib/PersonaContext';
 import { ApplicationListItem } from '@/lib/types';
-import { createApplication, startProcessing } from '@/lib/api';
+import { createApplication, startProcessing, getApplication } from '@/lib/api';
 import clsx from 'clsx';
 
 interface LandingPageProps {
@@ -44,6 +44,13 @@ export default function LandingPage({
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [largeDocumentMode, setLargeDocumentMode] = useState(false);
+
+  // Processing progress tracking (similar to admin page)
+  type ProcessingStep = 'idle' | 'uploading' | 'extracting' | 'analyzing' | 'complete' | 'error';
+  const [processingStep, setProcessingStep] = useState<ProcessingStep>('idle');
+  const [processingMessage, setProcessingMessage] = useState('');
+  const [processingAppId, setProcessingAppId] = useState<string | null>(null);
+  const pollingRef = useRef<string | null>(null);
 
   // Helper to check conditions
   const isAutomotiveClaims = currentPersona === 'automotive_claims';
@@ -114,6 +121,63 @@ export default function LandingPage({
     return `Case ${shortId}`;
   };
 
+  // Poll for processing completion - mirrors admin page behaviour
+  const pollForCompletion = useCallback((appId: string) => {
+    if (pollingRef.current === appId) return;
+    pollingRef.current = appId;
+
+    const pollInterval = 2000;
+    const maxPolls = 300;
+    let pollCount = 0;
+
+    const poll = async () => {
+      if (pollingRef.current !== appId) return;
+      pollCount++;
+      if (pollCount > maxPolls) {
+        setProcessingStep('error');
+        setProcessingMessage('Processing timed out. Please check the admin page.');
+        pollingRef.current = null;
+        return;
+      }
+      try {
+        const status = await getApplication(appId);
+        if (status.processing_status === 'extracting') {
+          setProcessingStep('extracting');
+          setProcessingMessage('Data Agent extracting documents...');
+          onRefreshApps();
+          setTimeout(poll, pollInterval);
+        } else if (status.processing_status === 'analyzing') {
+          setProcessingStep('analyzing');
+          setProcessingMessage('Risk Agent analyzing case...');
+          onRefreshApps();
+          setTimeout(poll, pollInterval);
+        } else if (status.processing_status === 'error') {
+          setProcessingStep('error');
+          setProcessingMessage(status.processing_error || 'An error occurred during processing.');
+          pollingRef.current = null;
+          onRefreshApps();
+        } else if (!status.processing_status) {
+          // Complete
+          setProcessingStep('complete');
+          setProcessingMessage('Analysis complete! Opening application...');
+          pollingRef.current = null;
+          onRefreshApps();
+          // Auto-navigate after short delay so user sees the "complete" state
+          setTimeout(() => {
+            onSelectApp(appId);
+          }, 1500);
+        }
+      } catch (err) {
+        console.warn('Polling error, retrying...', err);
+        setTimeout(poll, pollInterval);
+      }
+    };
+
+    setProcessingStep('extracting');
+    setProcessingMessage('Data Agent starting extraction...');
+    setTimeout(poll, pollInterval);
+  }, [onRefreshApps, onSelectApp]);
+
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -153,6 +217,9 @@ export default function LandingPage({
 
   const handleFiles = async (files: File[]) => {
     setUploading(true);
+    setProcessingStep('uploading');
+    setProcessingMessage('Uploading documents...');
+    setProcessingAppId(null);
     setError(null);
 
     try {
@@ -162,18 +229,23 @@ export default function LandingPage({
         undefined, // No external reference for quick start
         currentPersona
       );
+      setProcessingAppId(app.id);
 
       // 2. Start Processing with appropriate mode
       const processingMode = largeDocumentMode ? 'large_document' : 'standard';
       await startProcessing(app.id, processingMode);
 
-      // 3. Refresh list and navigate
+      // 3. Refresh list and start polling (do NOT navigate yet)
+      setUploading(false);
       onRefreshApps();
-      onSelectApp(app.id);
+      pollForCompletion(app.id);
 
     } catch (err) {
       console.error('Failed to create application:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create application');
+      const msg = err instanceof Error ? err.message : 'Failed to create application';
+      setError(msg);
+      setProcessingStep('error');
+      setProcessingMessage(msg);
       setUploading(false);
     }
   };
@@ -378,6 +450,91 @@ export default function LandingPage({
           </div>
         </div>
       </div>
+
+      {/* Processing Progress Banner */}
+      {processingStep !== 'idle' && (
+        <div className="max-w-7xl mx-auto px-6 lg:px-8 pt-4">
+          <div className={clsx(
+            'rounded-xl border p-4 flex items-center gap-4 transition-all',
+            processingStep === 'error'
+              ? 'bg-rose-50 border-rose-200'
+              : processingStep === 'complete'
+              ? 'bg-emerald-50 border-emerald-200'
+              : 'bg-sky-50 border-sky-200'
+          )}>
+            {/* Step icon */}
+            <div className={clsx(
+              'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0',
+              processingStep === 'error' ? 'bg-rose-100' :
+              processingStep === 'complete' ? 'bg-emerald-100' : 'bg-sky-100'
+            )}>
+              {processingStep === 'error' ? (
+                <AlertCircle className="w-5 h-5 text-rose-600" />
+              ) : processingStep === 'complete' ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              ) : (
+                <Loader2 className="w-5 h-5 text-sky-600 animate-spin" />
+              )}
+            </div>
+
+            {/* Step labels */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 mb-1">
+                {(['uploading', 'extracting', 'analyzing', 'complete'] as const).map((step, i) => {
+                  const stepIndex = ['uploading', 'extracting', 'analyzing', 'complete'].indexOf(processingStep);
+                  const thisIndex = i;
+                  const isDone = stepIndex > thisIndex || processingStep === 'complete';
+                  const isCurrent = processingStep === step;
+                  const labels = ['Uploading', 'Extracting', 'Analyzing', 'Complete'];
+                  return (
+                    <div key={step} className="flex items-center gap-1.5">
+                      {i > 0 && (
+                        <div className={clsx('w-6 h-px', isDone || isCurrent ? 'bg-sky-400' : 'bg-slate-200')} />
+                      )}
+                      <span className={clsx(
+                        'text-xs font-medium',
+                        processingStep === 'error' ? 'text-rose-600' :
+                        isCurrent ? 'text-sky-700' :
+                        isDone ? 'text-emerald-600' : 'text-slate-400'
+                      )}>
+                        {labels[i]}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className={clsx(
+                'text-sm font-medium truncate',
+                processingStep === 'error' ? 'text-rose-700' :
+                processingStep === 'complete' ? 'text-emerald-700' : 'text-sky-700'
+              )}>
+                {processingMessage}
+              </p>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {processingAppId && (processingStep === 'extracting' || processingStep === 'analyzing' || processingStep === 'complete') && (
+                <button
+                  onClick={() => onSelectApp(processingAppId)}
+                  className="px-3 py-1.5 text-xs font-medium bg-white border border-sky-200 text-sky-700 rounded-lg hover:bg-sky-50 transition-colors"
+                >
+                  Open
+                </button>
+              )}
+              {(processingStep === 'error' || processingStep === 'complete') && (
+                <button
+                  onClick={() => { setProcessingStep('idle'); setProcessingMessage(''); setProcessingAppId(null); }}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
+                  title="Dismiss"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Priority Queues */}
       <div className="max-w-7xl mx-auto px-6 lg:px-8 py-6">

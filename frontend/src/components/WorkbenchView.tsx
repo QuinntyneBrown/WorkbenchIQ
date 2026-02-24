@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Sparkles, FileText, ChevronLeft } from 'lucide-react';
+import { Sparkles, FileText, ChevronLeft, Loader2, Activity } from 'lucide-react';
 import TopNav from '@/components/TopNav';
 import PatientHeader from '@/components/PatientHeader';
 import PatientSummary from '@/components/PatientSummary';
@@ -14,6 +14,7 @@ import ChronologicalOverview from '@/components/ChronologicalOverview';
 import DocumentsPanel from '@/components/DocumentsPanel';
 import SourcePagesPanel from '@/components/SourcePagesPanel';
 import BatchSummariesPanel from '@/components/BatchSummariesPanel';
+import SourceReviewView from '@/components/SourceReviewView';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import PolicySummaryPanel from '@/components/PolicySummaryPanel';
 import PolicyReportModal from '@/components/PolicyReportModal';
@@ -109,36 +110,7 @@ export default function WorkbenchView({
           </div>
         );
       case 'source':
-        // For underwriting persona with batch summaries, show enhanced view
-        const hasBatchSummaries = selectedApp.batch_summaries && selectedApp.batch_summaries.length > 0;
-        
-        if (hasBatchSummaries) {
-          return (
-            <div className="flex-1 overflow-auto p-6 h-full">
-              <div className="grid grid-cols-2 gap-6 h-full">
-                <div className="h-full overflow-hidden">
-                  <BatchSummariesPanel 
-                    batchSummaries={selectedApp.batch_summaries!}
-                    onPageClick={(pageNum) => {
-                      setSourcePageNumber(pageNum);
-                    }}
-                  />
-                </div>
-                <div className="h-full overflow-hidden">
-                  <SourcePagesPanel 
-                    pages={selectedApp.markdown_pages || []} 
-                    selectedPageNumber={sourcePageNumber}
-                  />
-                </div>
-              </div>
-            </div>
-          );
-        }
-        return (
-          <div className="flex-1 overflow-auto p-6 h-full">
-            <SourcePagesPanel pages={selectedApp.markdown_pages || []} />
-          </div>
-        );
+        return <SourceReviewView application={selectedApp} />;
       case 'overview':
       default:
         if (currentPersona === 'automotive_claims') {
@@ -284,6 +256,35 @@ export default function WorkbenchView({
             </div>
           ) : selectedApp ? (
             <>
+               {/* Processing progress banner */}
+               {selectedApp.processing_status && (
+                 <div className={`border-b px-6 py-3 flex items-center gap-3 ${
+                   selectedApp.processing_status === 'analyzing'
+                     ? 'bg-violet-50 border-violet-200'
+                     : 'bg-sky-50 border-sky-200'
+                 }`}>
+                   {selectedApp.processing_status === 'analyzing' ? (
+                     <Activity className="w-4 h-4 text-violet-600 animate-pulse flex-shrink-0" />
+                   ) : (
+                     <Loader2 className="w-4 h-4 text-sky-600 animate-spin flex-shrink-0" />
+                   )}
+                   <div className="flex items-center gap-2 flex-1 min-w-0">
+                     <span className={`text-sm font-medium ${
+                       selectedApp.processing_status === 'analyzing' ? 'text-violet-700' : 'text-sky-700'
+                     }`}>
+                       {selectedApp.processing_status === 'extracting'
+                         ? 'Data Agent extracting documents'
+                         : 'Risk Agent analyzing case'}
+                     </span>
+                     <span className="flex gap-1 ml-1">
+                       <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                       <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                       <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                     </span>
+                   </div>
+                   <span className="text-xs bg-sky-100 text-sky-600 px-2 py-0.5 rounded-full font-medium flex-shrink-0">live</span>
+                 </div>
+               )}
                {currentPersona === 'underwriting' && <PatientHeader application={selectedApp} />}
                {renderContent()}
             </>

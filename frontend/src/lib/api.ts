@@ -36,15 +36,32 @@ const API_BASE_URL = '';
  */
 function getMediaBaseUrl(): string {
   if (typeof window !== 'undefined') {
-    // Use NEXT_PUBLIC_API_URL if it was injected at build time
-    if (process.env.NEXT_PUBLIC_API_URL) {
-      return process.env.NEXT_PUBLIC_API_URL;
+    // Use NEXT_PUBLIC_API_URL if it was injected at build time,
+    // but only if it's a publicly reachable URL (not localhost/internal)
+    const envUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+      return envUrl;
     }
     // On Azure: derive API URL from frontend URL (add -api suffix)
     const host = window.location.hostname;
     if (host.endsWith('.azurewebsites.net')) {
       const appName = host.replace('.azurewebsites.net', '');
       return `https://${appName}-api.azurewebsites.net`;
+    }
+    // Azure Container Apps: derive API URL (add -api suffix before region label)
+    // e.g., workbenchiq.bluesky-12345.eastus.azurecontainerapps.io
+    //     → workbenchiq-api.bluesky-12345.eastus.azurecontainerapps.io
+    if (host.endsWith('.azurecontainerapps.io')) {
+      const parts = host.split('.');
+      if (parts.length >= 2) {
+        parts[0] = parts[0] + '-api';
+        return `https://${parts.join('.')}`;
+      }
+    }
+    // Local development: connect directly to the Python backend
+    // to avoid the Next.js proxy which corrupts binary responses (PDFs, images)
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:8000';
     }
   }
   return API_BASE_URL;
