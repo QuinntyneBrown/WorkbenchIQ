@@ -856,7 +856,16 @@ def run_underwriting_prompts(
     if sections_to_run and app_md.llm_outputs:
         logger.info("Merging new results with existing llm_outputs (incremental re-analysis)")
         existing = app_md.llm_outputs.copy()
-        existing.update(results)
+        # Perform per-section (and per-subsection) merge to avoid dropping existing subsections
+        for section, section_results in results.items():
+            if isinstance(section_results, dict) and isinstance(existing.get(section), dict):
+                # Merge subsections within this section
+                merged_section = existing[section].copy()
+                merged_section.update(section_results)
+                existing[section] = merged_section
+            else:
+                # If not both dicts, replace entire section
+                existing[section] = section_results
         app_md.llm_outputs = existing
     else:
         app_md.llm_outputs = results

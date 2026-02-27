@@ -980,8 +980,8 @@ async def analyze_deep_dive(app_id: str, background: bool = False):
         
         logger.info("Running deep dive for %s: %d subsections missing", app_id, len(missing))
         
-        # Build subsections_to_run list
-        subsections_to_run = [("medical_summary", k) for k in deep_dive_keys]
+        # Build subsections_to_run list from missing subsections only (incremental)
+        subsections_to_run = [("medical_summary", k) for k in missing]
         
         if background:
             # Check if already processing
@@ -1009,7 +1009,7 @@ async def analyze_deep_dive(app_id: str, background: bool = False):
                     save_application_metadata(settings.app.storage_root, app_md)
                 except Exception as e:
                     logger.error("Deep dive failed for %s: %s", app_id, e, exc_info=True)
-                    app_md.processing_status = None
+                    app_md.processing_status = "error"
                     app_md.processing_error = str(e)
                     save_application_metadata(settings.app.storage_root, app_md)
             
@@ -1172,12 +1172,12 @@ async def run_application_risk_analysis(app_id: str):
         raise
     except Exception as e:
         logger.error("Risk analysis failed for %s: %s", app_id, e, exc_info=True)
-        # Clear processing status on error
+        # Mark processing status as error on failure
         try:
             settings = load_settings()
             app_md = load_application(settings.app.storage_root, app_id)
             if app_md:
-                app_md.processing_status = None
+                app_md.processing_status = "error"
                 app_md.processing_error = str(e)
                 save_application_metadata(settings.app.storage_root, app_md)
         except Exception:

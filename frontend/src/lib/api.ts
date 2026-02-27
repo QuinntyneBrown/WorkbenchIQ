@@ -278,16 +278,19 @@ export async function pollForDeepDiveCompletion(
     pollCount++;
     const app = await getApplication(appId);
     
+    // Check for backend error state
+    if (app.processing_status === 'error' || (app as any).processing_error) {
+      throw new Error((app as any).processing_error || 'Deep dive analysis failed');
+    }
+    
     // Check if no longer analyzing (could be 'completed', 'idle', null, etc.)
     // Deep dive completes when processing_status changes from 'analyzing'
     if (app.processing_status !== 'analyzing') {
-      console.log(`Deep dive polling completed after ${pollCount} polls in ${Date.now() - startTime}ms`);
       return app;
     }
     
     // Check timeout
     if (Date.now() - startTime > timeout) {
-      console.error(`Deep dive polling timed out after ${pollCount} polls`);
       throw new Error('Deep dive analysis timed out');
     }
     
@@ -312,8 +315,13 @@ export async function pollForAnalysisCompletion(
   while (true) {
     const app = await getApplication(appId);
     
+    // Check for backend error state
+    if (app.status === 'error' || (app as any).processing_error) {
+      throw new Error((app as any).processing_error || 'Analysis failed');
+    }
+    
     // Check if completed or failed
-    if (app.processing_status === 'completed' || app.processing_status === 'failed') {
+    if (app.status === 'completed' || app.processing_status === 'completed') {
       return app;
     }
     

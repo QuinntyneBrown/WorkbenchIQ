@@ -32,6 +32,7 @@ export default function BodySystemDeepDiveModal({
   const modalRef = useRef<HTMLDivElement>(null);
   const detailPanelRef = useRef<HTMLDivElement>(null);
   const systemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isRerunning, setIsRerunning] = useState(false);
   const [rerunStatus, setRerunStatus] = useState<string>('');
   const [currentApp, setCurrentApp] = useState<ApplicationMetadata>(application);
@@ -40,6 +41,16 @@ export default function BodySystemDeepDiveModal({
   useEffect(() => {
     setCurrentApp(application);
   }, [application]);
+  
+  // Cleanup timeout on unmount or close
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Close on Escape
   useEffect(() => {
@@ -78,6 +89,12 @@ export default function BodySystemDeepDiveModal({
   const handleDeepDiveRerun = async () => {
     if (isRerunning) return;
     
+    // Clear any existing timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    
     setIsRerunning(true);
     setRerunStatus('Starting deep dive analysis...');
     
@@ -92,16 +109,18 @@ export default function BodySystemDeepDiveModal({
       setCurrentApp(updatedApp);
       onApplicationUpdate?.(updatedApp);
       
-      setTimeout(() => {
+      timeoutRef.current = setTimeout(() => {
         setRerunStatus('');
         setIsRerunning(false);
+        timeoutRef.current = null;
       }, 2000);
     } catch (err) {
       console.error('Failed to run deep dive:', err);
       setRerunStatus('Deep dive failed. Please try again.');
-      setTimeout(() => {
+      timeoutRef.current = setTimeout(() => {
         setRerunStatus('');
         setIsRerunning(false);
+        timeoutRef.current = null;
       }, 3000);
     }
   };
