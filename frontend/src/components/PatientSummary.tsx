@@ -1,15 +1,16 @@
 'use client';
 
-import { User, Sparkles } from 'lucide-react';
+import { User, Sparkles, Microscope } from 'lucide-react';
 import type { ApplicationMetadata, PolicyCitation } from '@/lib/types';
 import RiskRatingPopover from './RiskRatingPopover';
 
 interface PatientSummaryProps {
   application: ApplicationMetadata;
   onPolicyClick?: (policyId: string) => void;
+  onDeepDive?: () => void;
 }
 
-export default function PatientSummary({ application, onPolicyClick }: PatientSummaryProps) {
+export default function PatientSummary({ application, onPolicyClick, onDeepDive }: PatientSummaryProps) {
   // Get summary from LLM outputs
   const customerProfile = application.llm_outputs?.application_summary?.customer_profile?.parsed as any;
   const summary = customerProfile?.summary || customerProfile?.medical_summary || null;
@@ -33,14 +34,25 @@ export default function PatientSummary({ application, onPolicyClick }: PatientSu
         </div>
 
         {/* Risk Badge with Popover */}
-        {riskAssessment && (
-          <RiskRatingPopover
+        <div className="flex items-center gap-2">
+          {(application.status === 'completed' || application.llm_outputs) && (
+            <button
+              onClick={onDeepDive}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors"
+            >
+              <Microscope className="w-3.5 h-3.5" />
+              Deep Dive
+            </button>
+          )}
+          {riskAssessment && (
+            <RiskRatingPopover
             rating={riskAssessment}
             rationale={summary}
             citations={policyCitations}
             onPolicyClick={onPolicyClick}
           />
-        )}
+          )}
+        </div>
       </div>
 
       {/* Summary Text */}

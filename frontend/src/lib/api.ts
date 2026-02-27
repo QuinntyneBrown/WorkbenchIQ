@@ -23,6 +23,12 @@ import type {
   PolicyUpdateRequest,
   PoliciesResponse,
   PolicyResponse,
+  DeepDiveData,
+  BodySystemReviewParsed,
+  PendingInvestigationsParsed,
+  LastOfficeVisitParsed,
+  AbnormalLabsParsed,
+  LatestVitalsParsed,
 } from './types';
 
 // Backend API base URL - uses relative paths to go through Next.js proxy rewrites
@@ -154,6 +160,33 @@ export async function getApplication(appId: string): Promise<ApplicationMetadata
 }
 
 /**
+ * Extract deep dive data from an application's llm_outputs.
+ * No API call needed — reads from existing llm_outputs on the application object.
+ */
+export function getDeepDiveData(app: ApplicationMetadata): DeepDiveData {
+  const ms = app.llm_outputs?.medical_summary;
+
+  const bodySystemReview = (ms?.body_system_review?.parsed as BodySystemReviewParsed | undefined) ?? null;
+  const pendingInvestigations = (ms?.pending_investigations?.parsed as PendingInvestigationsParsed | undefined) ?? null;
+  const lastOfficeVisit = (ms?.last_office_visit?.parsed as LastOfficeVisitParsed | undefined) ?? null;
+  const abnormalLabs = (ms?.abnormal_labs?.parsed as AbnormalLabsParsed | undefined) ?? null;
+  const latestVitals = (ms?.latest_vitals?.parsed as LatestVitalsParsed | undefined) ?? null;
+  const familyHistory = ms?.family_history?.parsed ?? null;
+
+  const hasData = !!(bodySystemReview || pendingInvestigations || lastOfficeVisit || abnormalLabs || latestVitals);
+
+  return {
+    bodySystemReview,
+    pendingInvestigations,
+    lastOfficeVisit,
+    abnormalLabs,
+    latestVitals,
+    familyHistory,
+    hasData,
+  };
+}
+
+/**
  * Create a new application with uploaded files
  */
 export async function createApplication(
@@ -211,6 +244,87 @@ export async function runUnderwritingAnalysis(
     method: 'POST',
     body: JSON.stringify({ sections }),
   });
+}
+
+/**
+ * Run deep dive analysis on an application
+ * @param background If true, starts in background and returns immediately
+ */
+export async function runDeepDiveAnalysis(
+  appId: string,
+  background: boolean = false
+): Promise<ApplicationMetadata> {
+  const params = background ? '?background=true' : '';
+  return apiFetch<ApplicationMetadata>(`/api/applications/${appId}/analyze/deep-dive${params}`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Poll for deep dive analysis completion
+ * @param appId Application ID
+ * @param timeout Maximum time to poll in milliseconds (default: 2 minutes)
+ * @param interval Polling interval in milliseconds (default: 2 seconds)
+ */
+export async function pollForDeepDiveCompletion(
+  appId: string,
+  timeout: number = 120000,
+  interval: number = 2000
+): Promise<ApplicationMetadata> {
+  const startTime = Date.now();
+  let pollCount = 0;
+  
+  while (true) {
+    pollCount++;
+    const app = await getApplication(appId);
+    
+    // Check if no longer analyzing (could be 'completed', 'idle', null, etc.)
+    // Deep dive completes when processing_status changes from 'analyzing'
+    if (app.processing_status !== 'analyzing') {
+      console.log(`Deep dive polling completed after ${pollCount} polls in ${Date.now() - startTime}ms`);
+      return app;
+    }
+    
+    // Check timeout
+    if (Date.now() - startTime > timeout) {
+      console.error(`Deep dive polling timed out after ${pollCount} polls`);
+      throw new Error('Deep dive analysis timed out');
+    }
+    
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, interval));
+  }
+}
+
+/**
+ * Poll for application status until analysis completes or fails
+ * @param appId Application ID
+ * @param timeout Maximum time to poll in milliseconds (default: 5 minutes)
+ * @param interval Polling interval in milliseconds (default: 2 seconds)
+ */
+export async function pollForAnalysisCompletion(
+  appId: string,
+  timeout: number = 300000,
+  interval: number = 2000
+): Promise<ApplicationMetadata> {
+  const startTime = Date.now();
+  
+  while (true) {
+    const app = await getApplication(appId);
+    
+    // Check if completed or failed
+    if (app.processing_status === 'completed' || app.processing_status === 'failed') {
+      return app;
+    }
+    
+    // Check timeout
+    if (Date.now() - startTime > timeout) {
+      throw new Error('Analysis polling timed out');
+    }
+    
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, interval));
+  }
 }
 
 /**

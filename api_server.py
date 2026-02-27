@@ -931,6 +931,120 @@ async def analyze_application(app_id: str, request: AnalyzeRequest = None, backg
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/applications/{app_id}/analyze/deep-dive")
+async def analyze_deep_dive(app_id: str, background: bool = False):
+    """Run only the 5 deep-dive subsections within medical_summary.
+    
+    This is an incremental re-analysis that:
+    1. Detects which deep-dive subsections are missing
+    2. Runs only those subsections (or all 5 if force re-run)
+    3. Merges results with existing llm_outputs
+    
+    Useful for adding deep dive to applications analyzed before the feature existed.
+    
+    Args:
+        app_id: Application ID
+        background: If True, run in background and return immediately
+    """
+    try:
+        settings = load_settings()
+        app_md = load_application(settings.app.storage_root, app_id)
+        if not app_md:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        if not app_md.document_markdown:
+            raise HTTPException(
+                status_code=400,
+                detail="No document content. Run extraction first."
+            )
+
+        # Deep dive subsections
+        deep_dive_keys = [
+            "body_system_review",
+            "pending_investigations", 
+            "last_office_visit",
+            "abnormal_labs",
+            "latest_vitals",
+        ]
+        
+        # Check which are missing
+        existing_ms = app_md.llm_outputs.get("medical_summary", {}) if app_md.llm_outputs else {}
+        missing = [k for k in deep_dive_keys if k not in existing_ms]
+        
+        if not missing:
+            logger.info("All deep dive subsections already present for %s", app_id)
+            return {
+                **application_to_dict(app_md),
+                "message": "All deep dive subsections already present. No re-analysis needed."
+            }
+        
+        logger.info("Running deep dive for %s: %d subsections missing", app_id, len(missing))
+        
+        # Build subsections_to_run list
+        subsections_to_run = [("medical_summary", k) for k in deep_dive_keys]
+        
+        if background:
+            # Check if already processing
+            if app_md.processing_status in ("extracting", "analyzing"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Application is already being processed: {app_md.processing_status}"
+                )
+            
+            # Start background task
+            async def run_deep_dive_bg():
+                try:
+                    updated = await asyncio.to_thread(
+                        run_underwriting_prompts,
+                        settings,
+                        app_md,
+                        sections_to_run=["medical_summary"],
+                        subsections_to_run=subsections_to_run,
+                        max_workers_per_section=4,
+                    )
+                    logger.info("Deep dive completed for %s", app_id)
+                    # Reset processing status after successful completion
+                    app_md.processing_status = None
+                    app_md.processing_error = None
+                    save_application_metadata(settings.app.storage_root, app_md)
+                except Exception as e:
+                    logger.error("Deep dive failed for %s: %s", app_id, e, exc_info=True)
+                    app_md.processing_status = None
+                    app_md.processing_error = str(e)
+                    save_application_metadata(settings.app.storage_root, app_md)
+            
+            task = asyncio.create_task(run_deep_dive_bg())
+            task.add_done_callback(_handle_task_exception)
+            
+            app_md.processing_status = "analyzing"
+            app_md.processing_error = None
+            save_application_metadata(settings.app.storage_root, app_md)
+            
+            return {
+                **application_to_dict(app_md),
+                "message": f"Deep dive started for {len(deep_dive_keys)} subsections. Poll GET /api/applications/{{app_id}} for status."
+            }
+        
+        # Synchronous mode
+        app_md = await asyncio.to_thread(
+            run_underwriting_prompts,
+            settings,
+            app_md,
+            sections_to_run=["medical_summary"],
+            subsections_to_run=subsections_to_run,
+            max_workers_per_section=4,
+        )
+
+        logger.info("Deep dive completed for application %s", app_id)
+        return application_to_dict(app_md)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Deep dive failed for %s: %s", app_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/applications/{app_id}/reset-status")
 async def reset_application_status(app_id: str):
     """Reset processing status to idle (use if stuck in processing state)."""
@@ -1037,6 +1151,11 @@ async def run_application_risk_analysis(app_id: str):
                 detail="Risk analysis is only available for underwriting applications."
             )
 
+        # Set status to analyzing before starting
+        app_md.processing_status = "analyzing"
+        app_md.processing_error = None
+        save_application_metadata(settings.app.storage_root, app_md)
+
         # Run risk analysis in thread pool to avoid blocking event loop
         risk_result = await asyncio.to_thread(
             run_risk_analysis, settings, app_md
@@ -1053,6 +1172,16 @@ async def run_application_risk_analysis(app_id: str):
         raise
     except Exception as e:
         logger.error("Risk analysis failed for %s: %s", app_id, e, exc_info=True)
+        # Clear processing status on error
+        try:
+            settings = load_settings()
+            app_md = load_application(settings.app.storage_root, app_id)
+            if app_md:
+                app_md.processing_status = None
+                app_md.processing_error = str(e)
+                save_application_metadata(settings.app.storage_root, app_md)
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=str(e))
 
 

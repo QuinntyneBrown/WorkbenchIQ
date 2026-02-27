@@ -10,16 +10,24 @@ import { FileStack } from 'lucide-react';
 
 interface SourceReviewViewProps {
   application: ApplicationMetadata;
+  initialPage?: number;
 }
 
-export default function SourceReviewView({ application }: SourceReviewViewProps) {
+export default function SourceReviewView({ application, initialPage }: SourceReviewViewProps) {
   const pages = application.markdown_pages || [];
   const batchSummaries = application.batch_summaries || [];
 
   // Selected page number (1-indexed)
   const [selectedPageNum, setSelectedPageNum] = useState<number>(
-    pages.length > 0 ? pages[0].page_number : 1
+    initialPage || (pages.length > 0 ? pages[0].page_number : 1)
   );
+
+  // Jump to initialPage when it changes
+  useEffect(() => {
+    if (initialPage && initialPage !== selectedPageNum) {
+      setSelectedPageNum(initialPage);
+    }
+  }, [initialPage]);
 
   // Search state
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);

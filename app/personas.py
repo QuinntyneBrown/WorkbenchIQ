@@ -705,6 +705,241 @@ Return STRICT JSON:
   "risk_assessment": "Low | Moderate | High",
   "underwriting_action": "Suggested operational next steps."
 }
+        """,
+        "body_system_review": """
+You are an expert medical underwriting assistant. Analyze the following medical records and extract all clinical findings organized by body system.
+
+For EACH body system that has any findings in the records, create an entry with:
+
+**Body System Codes** (use these exact codes):
+- NEURO (Neurological), ENT (Ear/Nose/Throat), EYES (Ophthalmology), DENTAL (Dental)
+- CV (Cardiovascular), RESP (Respiratory), BREAST (Breast)
+- GI (Gastrointestinal), HEPATIC (Hepatic/Liver), RENAL (Renal/Kidney)
+- GU (Genitourinary), REPRO (Reproductive)
+- MSK (Musculoskeletal), VASC (Vascular/Peripheral)
+- ENDO (Endocrine), HEME (Hematology), DERM (Dermatology)
+- PSYCH (Psychiatric), IMMUNE (Immunology), BUILD (Build/Weight)
+
+For each body system found, extract:
+1. **Diagnoses** — Each diagnosis with date diagnosed, current status (active/resolved/monitoring), and page reference(s)
+2. **Treatments** — For each diagnosis, list treatments in reverse chronological order with date and page reference(s)
+3. **Consults** — Specialist visits related to this system, with date, specialist type, summary, and page reference(s)
+4. **Imaging** — Any imaging studies (X-ray, MRI, CT, ultrasound, etc.) with date, type, result, and page reference(s)
+
+**Body Region Mapping** (use these for the body_region field):
+- head → NEURO, ENT, EYES, DENTAL, PSYCH
+- chest → CV, RESP, BREAST
+- abdomen → GI, HEPATIC, RENAL
+- pelvis → GU, REPRO
+- joints_spine → MSK
+- extremities → VASC
+- skin → DERM
+- systemic → ENDO, HEME, IMMUNE, BUILD
+
+**Severity Classification:**
+- "high" — Active, uncontrolled, or newly diagnosed conditions requiring immediate underwriting attention
+- "moderate" — Stable conditions under treatment, or conditions with pending workup
+- "low" — Resolved conditions, or well-controlled chronic conditions
+- "normal" — Screening/preventive findings with normal results
+
+**Page References:** The document contains page references — either as (Page N) citations in batch summaries or as <!-- Page N --> markers in raw records. For EVERY finding, include the page number(s) where the information was found. This is CRITICAL for underwriter verification.
+
+**Ordering:** Within each body system, list diagnoses with the most recent first. Within each diagnosis, list treatments, consults, and imaging with the most recent first.
+
+**Only include body systems that have actual findings in the records.** Do not create empty body systems.
+
+**Conciseness:** Keep treatment descriptions brief (medication name + dose, not full narratives). Include the most recent 2–3 treatments per diagnosis max. For consults and imaging, include the most recent and any with abnormal findings. This ensures the response fits within output limits even for large documents.
+
+IMPORTANT: Translate all non-English text to English. Convert metric units: kg → lbs, cm → feet/inches, °C → °F, mmol/L → mg/dL.
+
+Return a JSON object with this exact schema:
+{
+  "body_systems": [
+    {
+      "system_code": "string (e.g., MSK)",
+      "system_name": "string (e.g., Musculoskeletal)",
+      "body_region": "string (e.g., joints_spine)",
+      "severity": "high | moderate | low | normal",
+      "diagnoses": [
+        {
+          "name": "string",
+          "date_diagnosed": "string (YYYY-MM or YYYY)",
+          "status": "active | resolved | monitoring | unknown",
+          "page_references": [number],
+          "treatments": [
+            {
+              "description": "string",
+              "date": "string (YYYY-MM or YYYY)",
+              "page_references": [number]
+            }
+          ],
+          "consults": [
+            {
+              "specialist": "string",
+              "date": "string",
+              "summary": "string",
+              "page_references": [number]
+            }
+          ],
+          "imaging": [
+            {
+              "type": "string",
+              "date": "string",
+              "result": "string",
+              "page_references": [number]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+        """,
+        "pending_investigations": """
+You are an expert medical underwriting assistant. Analyze the following medical records and extract ALL pending investigations — any tests, referrals, consults, imaging, procedures, or follow-ups that have been ordered, recommended, or scheduled but not yet completed or with results still outstanding.
+
+This is CRITICAL information for underwriters as pending investigations may reveal undiagnosed conditions that affect risk assessment.
+
+Look for indicators such as:
+- "pending", "scheduled", "ordered", "referred to", "follow-up", "repeat in", "due", "awaiting"
+- Future appointment dates
+- Tests ordered but results not yet documented
+- Specialist referrals without documented visit
+- Recommended procedures not yet performed
+- Abnormal results requiring additional workup
+
+For each pending investigation, provide:
+- **date**: When it was ordered/mentioned (YYYY-MM format)
+- **description**: Full description including context (what triggered it, what it's investigating)
+- **type**: One of: test, referral, consult, imaging, procedure
+- **urgency**: high (potential malignancy, acute symptoms, abnormal findings), medium (routine follow-up with clinical significance), low (preventive/screening)
+- **page_references**: Source page number(s) — REQUIRED
+
+**Page References:** The document contains page references — either as (Page N) citations in batch summaries or as <!-- Page N --> markers in raw records. For EVERY finding, include the page number(s) where the information was found.
+
+IMPORTANT: Translate all non-English text to English.
+
+Return a JSON object:
+{
+  "pending_investigations": [
+    {
+      "date": "string (YYYY-MM)",
+      "description": "string",
+      "type": "test | referral | consult | imaging | procedure",
+      "urgency": "high | medium | low",
+      "page_references": [number]
+    }
+  ],
+  "summary": "string — brief one-sentence overview of all pending items for the underwriter"
+}
+        """,
+        "last_office_visit": """
+You are an expert medical underwriting assistant. Analyze the following medical records and identify the MOST RECENT office/clinic visit and the MOST RECENT lab work.
+
+**Last Office Visit (LOV):**
+Find the latest documented physician/provider visit and extract:
+- Date of visit
+- Comprehensive summary of what was discussed, examined, diagnosed, and any clinical decisions made
+- All follow-up plans, future appointments, and pending orders
+- Page reference(s)
+
+**Last Labs:**
+Find the most recent set of laboratory work and extract:
+- Date labs were drawn/reported
+- Overall assessment (normal, abnormal findings noted)
+- Page reference(s)
+
+**Page References:** The document contains page references — either as (Page N) citations in batch summaries or as <!-- Page N --> markers in raw records. For EVERY finding, include the page number(s) where the information was found.
+
+IMPORTANT: Translate all non-English text to English. Convert metric units: kg → lbs, cm → feet/inches, °C → °F, mmol/L → mg/dL.
+
+Return a JSON object:
+{
+  "last_office_visit": {
+    "date": "string (YYYY-MM or YYYY-MM-DD)",
+    "summary": "string — comprehensive summary of the visit",
+    "follow_up_plans": ["string — each planned follow-up item"],
+    "page_references": [number]
+  },
+  "last_labs": {
+    "date": "string (YYYY-MM or YYYY-MM-DD)",
+    "summary": "string — overall lab assessment",
+    "page_references": [number]
+  }
+}
+        """,
+        "abnormal_labs": """
+You are an expert medical underwriting assistant. Analyze the following medical records and extract ALL abnormal laboratory results.
+
+For each abnormal lab result, provide:
+- **date**: Date the lab was drawn/reported
+- **test_name**: Standard test name (e.g., "LDL Cholesterol", "HbA1c", "TSH", "Fasting Glucose", "ALT", "Creatinine")
+- **value**: The measured value as a string
+- **unit**: Unit of measurement (use US standard: mg/dL, mIU/L, g/dL, etc.)
+- **reference_range**: Normal reference range for context
+- **interpretation**: Brief clinical interpretation (e.g., "Elevated", "Low", "Borderline high", "Critically elevated")
+- **page_references**: Source page number(s) — REQUIRED
+
+**Ordering:** List results in reverse chronological order (most recent first).
+
+**Only include abnormal results.** Do not list normal lab values.
+
+**Page References:** The document contains page references — either as (Page N) citations in batch summaries or as <!-- Page N --> markers in raw records. For EVERY finding, include the page number(s) where the information was found.
+
+IMPORTANT: Convert metric units to US standard where applicable:
+- mmol/L → mg/dL for glucose and lipids
+- μmol/L → mg/dL for creatinine and bilirubin
+- All SI units → conventional US units
+
+Return a JSON object:
+{
+  "abnormal_labs": [
+    {
+      "date": "string (YYYY-MM-DD or YYYY-MM)",
+      "test_name": "string",
+      "value": "string",
+      "unit": "string",
+      "reference_range": "string",
+      "interpretation": "string",
+      "page_references": [number]
+    }
+  ]
+}
+        """,
+        "latest_vitals": """
+You are an expert medical underwriting assistant. Analyze the following medical records and extract the MOST RECENT set of vital signs recorded.
+
+Look for:
+- Blood pressure (systolic/diastolic in mmHg)
+- Heart rate / Pulse (bpm)
+- Weight (convert to lbs if recorded in kg: multiply by 2.205)
+- Height (convert to feet/inches if recorded in cm)
+- BMI (calculated or as recorded)
+- Temperature (convert to °F if recorded in °C: multiply by 1.8 + 32)
+- Respiratory rate (breaths per minute)
+- Oxygen saturation (SpO2 %)
+
+If a vital sign is not documented anywhere in the records, set it to null. Do not guess or infer values.
+
+**Page References:** The document contains page references — either as (Page N) citations in batch summaries or as <!-- Page N --> markers in raw records. Include the page number(s) where the vitals were recorded.
+
+IMPORTANT: Convert metric units: kg → lbs, cm → feet/inches, °C → °F.
+
+Return a JSON object:
+{
+  "latest_vitals": {
+    "date": "string (YYYY-MM-DD or YYYY-MM)",
+    "blood_pressure": { "systolic": number, "diastolic": number } | null,
+    "heart_rate": number | null,
+    "weight": { "value": number, "unit": "lbs" } | null,
+    "height": { "value": "string (e.g. 5'4\\")", "unit": "ft/in" } | null,
+    "bmi": number | null,
+    "temperature": number | null,
+    "respiratory_rate": number | null,
+    "oxygen_saturation": number | null,
+    "page_references": [number]
+  }
+}
         """
     },
     "requirements": {

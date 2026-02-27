@@ -395,6 +395,15 @@ def run_content_understanding_for_files(
     return app_md
 
 
+# Per-subsection max_tokens overrides for prompts that produce large JSON.
+# Subsections not listed here use the chat_completion default (1200).
+_SUBSECTION_MAX_TOKENS: Dict[str, int] = {
+    "body_system_review": 8000,  # Multi-system structured JSON for 100+ page docs
+    "pending_investigations": 2000,
+    "abnormal_labs": 2000,
+}
+
+
 def _run_single_prompt(
     settings: Settings,
     section: str,
@@ -403,6 +412,7 @@ def _run_single_prompt(
     document_markdown: str,
     additional_context: str = "",
     underwriting_policies: str = "",
+    max_tokens_override: int | None = None,
 ) -> Dict[str, Any]:
     system_prompt = "You are an expert life insurance underwriter. Always return STRICT JSON."
     
@@ -425,8 +435,14 @@ def _run_single_prompt(
         {"role": "user", "content": user_prompt},
     ]
 
-    logger.info("Running prompt: %s.%s", section, subsection)
-    result = chat_completion(settings.openai, messages)
+    # Determine max_tokens: explicit override > subsection map > default
+    max_tokens = max_tokens_override or _SUBSECTION_MAX_TOKENS.get(subsection)
+    kwargs: Dict[str, Any] = {}
+    if max_tokens:
+        kwargs["max_tokens"] = max_tokens
+
+    logger.info("Running prompt: %s.%s (max_tokens=%s)", section, subsection, max_tokens or 'default')
+    result = chat_completion(settings.openai, messages, **kwargs)
     raw_content = result["content"]
 
     try:
@@ -498,13 +514,13 @@ def _run_section_prompts(
         for subsection, template in work_items:
             future = executor.submit(
                 _run_single_prompt,
-                settings,
-                section,
-                subsection,
-                template,
-                document_markdown,
-                additional_context,
-                underwriting_policies,
+                settings=settings,
+                section=section,
+                subsection=subsection,
+                prompt_template=template,
+                document_markdown=document_markdown,
+                additional_context=additional_context,
+                underwriting_policies=underwriting_policies,
             )
             futures[future] = subsection
         
@@ -594,6 +610,7 @@ def run_underwriting_prompts(
     )
     
     # Build appropriate context for prompts
+    batch_summaries_context: str | None = None  # Rich context for deep dive prompts
     if mode == "large_document":
         logger.info("Using large document mode - building condensed context...")
         document_context, batch_summaries = build_condensed_context(
@@ -610,6 +627,26 @@ def run_underwriting_prompts(
             len(document_context), len(document_context) // 4,
             len(batch_summaries) if batch_summaries else 0
         )
+        # Build rich batch-summaries context for deep dive prompts.
+        # Batch summaries preserve per-page detail and (Page N) references
+        # that the consolidated condensed context may have lost.
+        if batch_summaries:
+            parts = []
+            for bs in batch_summaries:
+                parts.append(
+                    f"### Batch {bs['batch_num']} — Pages {bs['page_start']}–{bs['page_end']}\n"
+                    f"{bs['summary']}"
+                )
+            batch_summaries_context = (
+                "# Detailed Batch Summaries\n"
+                "The following are detailed summaries of the original medical records, "
+                "organized by page range. Page references appear as (Page N) throughout.\n\n"
+                + "\n\n".join(parts)
+            )
+            logger.info(
+                "Batch summaries context for deep dive: %d chars (~%d tokens)",
+                len(batch_summaries_context), len(batch_summaries_context) // 4,
+            )
     else:
         document_context = app_md.document_markdown
         app_md.processing_mode = "standard"
@@ -728,22 +765,82 @@ def run_underwriting_prompts(
     
     underwriting_policies = ""
 
+    # Deep dive subsections that benefit from richer batch-summary context
+    _DEEP_DIVE_SUBSECTIONS = {
+        "body_system_review",
+        "pending_investigations",
+        "last_office_visit",
+        "abnormal_labs",
+        "latest_vitals",
+    }
+
     results: Dict[str, Dict[str, Any]] = {}
 
     # Run each section sequentially to avoid overwhelming the service
     for section, subs in sections_to_process:
         logger.info("Starting section: %s", section)
-        
-        section_results = _run_section_prompts(
-            settings=settings,
-            section=section,
-            subsections=subs,
-            document_markdown=document_context,  # Use condensed context for large docs
-            subsections_to_run=subsections_to_run,
-            max_workers=max_workers_per_section,
-            additional_context=policy_context,
-            underwriting_policies=underwriting_policies,
-        )
+
+        # For medical_summary in large-doc mode with batch summaries available,
+        # route deep-dive subsections to the richer batch-summaries context so
+        # they build on the earlier page-level extraction instead of re-analyzing
+        # a lossy condensed summary.
+        if (
+            section == "medical_summary"
+            and batch_summaries_context is not None
+        ):
+            deep_dive_subs = {
+                k: v for k, v in subs.items() if k in _DEEP_DIVE_SUBSECTIONS
+            }
+            other_subs = {
+                k: v for k, v in subs.items() if k not in _DEEP_DIVE_SUBSECTIONS
+            }
+
+            section_results: Dict[str, Any] = {}
+
+            # Run original medical_summary prompts against condensed context
+            if other_subs:
+                section_results.update(
+                    _run_section_prompts(
+                        settings=settings,
+                        section=section,
+                        subsections=other_subs,
+                        document_markdown=document_context,
+                        subsections_to_run=subsections_to_run,
+                        max_workers=max_workers_per_section,
+                        additional_context=policy_context,
+                        underwriting_policies=underwriting_policies,
+                    )
+                )
+
+            # Run deep-dive prompts against richer batch summaries
+            if deep_dive_subs:
+                logger.info(
+                    "Routing %d deep-dive prompts to batch-summaries context",
+                    len(deep_dive_subs),
+                )
+                section_results.update(
+                    _run_section_prompts(
+                        settings=settings,
+                        section=section,
+                        subsections=deep_dive_subs,
+                        document_markdown=batch_summaries_context,
+                        subsections_to_run=subsections_to_run,
+                        max_workers=max_workers_per_section,
+                        additional_context=policy_context,
+                        underwriting_policies=underwriting_policies,
+                    )
+                )
+        else:
+            section_results = _run_section_prompts(
+                settings=settings,
+                section=section,
+                subsections=subs,
+                document_markdown=document_context,
+                subsections_to_run=subsections_to_run,
+                max_workers=max_workers_per_section,
+                additional_context=policy_context,
+                underwriting_policies=underwriting_policies,
+            )
         
         results[section] = section_results
         logger.info("Completed section: %s (%d prompts)", section, len(section_results))
@@ -755,7 +852,15 @@ def run_underwriting_prompts(
             except Exception as exc:  # noqa: BLE001
                 logger.warning("on_section_complete callback failed: %s", exc)
 
-    app_md.llm_outputs = results
+    # Merge results with existing outputs if doing partial re-analysis
+    if sections_to_run and app_md.llm_outputs:
+        logger.info("Merging new results with existing llm_outputs (incremental re-analysis)")
+        existing = app_md.llm_outputs.copy()
+        existing.update(results)
+        app_md.llm_outputs = existing
+    else:
+        app_md.llm_outputs = results
+    
     app_md.status = "completed"
     save_application_metadata(settings.app.storage_root, app_md)
     logger.info("Underwriting prompts completed for application %s (mode: %s)", app_md.id, mode)
@@ -879,6 +984,10 @@ def run_risk_analysis(
     if not hasattr(app_md, 'risk_analysis') or app_md.risk_analysis is None:
         app_md.risk_analysis = {}
     app_md.risk_analysis = risk_analysis_result
+    
+    # Clear processing status after successful completion
+    app_md.processing_status = None
+    app_md.processing_error = None
     
     save_application_metadata(settings.app.storage_root, app_md)
     logger.info("Risk analysis completed for application %s", app_md.id)

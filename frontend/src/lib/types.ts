@@ -86,6 +86,12 @@ export interface LLMOutputs {
     high_cholesterol?: SubsectionOutput;
     other_medical_findings?: SubsectionOutput;
     other_risks?: SubsectionOutput;
+    // Deep dive subsections (populated by /analyze)
+    body_system_review?: SubsectionOutput;
+    pending_investigations?: SubsectionOutput;
+    last_office_visit?: SubsectionOutput;
+    abnormal_labs?: SubsectionOutput;
+    latest_vitals?: SubsectionOutput;
     [key: string]: SubsectionOutput | undefined;
   };
   requirements?: {
@@ -93,6 +99,131 @@ export interface LLMOutputs {
     [key: string]: SubsectionOutput | undefined;
   };
   [key: string]: Record<string, SubsectionOutput | undefined> | undefined;
+}
+
+// ============================================================================
+// Body System Deep Dive Types
+// ============================================================================
+
+export type BodyRegion = 'head' | 'chest' | 'abdomen' | 'pelvis' | 'joints_spine' | 'extremities' | 'skin' | 'systemic';
+export type Severity = 'high' | 'moderate' | 'low' | 'normal';
+export type DiagnosisStatus = 'active' | 'resolved' | 'monitoring' | 'unknown';
+export type InvestigationType = 'test' | 'referral' | 'consult' | 'imaging' | 'procedure';
+export type Urgency = 'high' | 'medium' | 'low';
+
+export interface TreatmentEntry {
+  description: string;
+  date: string;
+  page_references: number[];
+}
+
+export interface ConsultEntry {
+  specialist: string;
+  date: string;
+  summary: string;
+  page_references: number[];
+}
+
+export interface ImagingEntry {
+  type: string;
+  date: string;
+  result: string;
+  page_references: number[];
+}
+
+export interface DiagnosisEntry {
+  name: string;
+  date_diagnosed: string;
+  status: DiagnosisStatus;
+  page_references: number[];
+  treatments: TreatmentEntry[];
+  consults: ConsultEntry[];
+  imaging: ImagingEntry[];
+}
+
+export interface BodySystemEntry {
+  system_code: string;
+  system_name: string;
+  body_region: BodyRegion;
+  severity: Severity;
+  diagnoses: DiagnosisEntry[];
+}
+
+export interface BodySystemReviewParsed {
+  body_systems: BodySystemEntry[];
+}
+
+export interface PendingInvestigation {
+  date: string;
+  description: string;
+  type: InvestigationType;
+  urgency: Urgency;
+  page_references: number[];
+}
+
+export interface PendingInvestigationsParsed {
+  pending_investigations: PendingInvestigation[];
+  summary: string;
+}
+
+export interface LastOfficeVisitData {
+  date: string;
+  summary: string;
+  follow_up_plans: string[];
+  page_references: number[];
+}
+
+export interface LastLabsData {
+  date: string;
+  summary: string;
+  page_references: number[];
+}
+
+export interface LastOfficeVisitParsed {
+  last_office_visit: LastOfficeVisitData;
+  last_labs: LastLabsData;
+}
+
+export interface AbnormalLabEntry {
+  date: string;
+  test_name: string;
+  value: string;
+  unit: string;
+  reference_range: string;
+  interpretation: string;
+  page_references: number[];
+}
+
+export interface AbnormalLabsParsed {
+  abnormal_labs: AbnormalLabEntry[];
+}
+
+export interface LatestVitalsData {
+  date: string;
+  blood_pressure: { systolic: number; diastolic: number } | null;
+  heart_rate: number | null;
+  weight: { value: number; unit: string } | null;
+  height: { value: string; unit: string } | null;
+  bmi: number | null;
+  temperature: number | null;
+  respiratory_rate: number | null;
+  oxygen_saturation: number | null;
+  page_references: number[];
+}
+
+export interface LatestVitalsParsed {
+  latest_vitals: LatestVitalsData;
+}
+
+/** Aggregation of all deep dive data extracted from llm_outputs */
+export interface DeepDiveData {
+  bodySystemReview: BodySystemReviewParsed | null;
+  pendingInvestigations: PendingInvestigationsParsed | null;
+  lastOfficeVisit: LastOfficeVisitParsed | null;
+  abnormalLabs: AbnormalLabsParsed | null;
+  latestVitals: LatestVitalsParsed | null;
+  familyHistory: ParsedOutput | null;
+  hasData: boolean;
 }
 
 // Risk Analysis types (separate from standard LLM outputs)

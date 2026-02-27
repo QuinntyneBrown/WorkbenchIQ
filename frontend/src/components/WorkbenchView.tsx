@@ -19,6 +19,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import PolicySummaryPanel from '@/components/PolicySummaryPanel';
 import PolicyReportModal from '@/components/PolicyReportModal';
 import ChatDrawer from '@/components/ChatDrawer';
+import BodySystemDeepDiveModal from '@/components/BodySystemDeepDiveModal';
 import LifeHealthClaimsOverview from '@/components/claims/LifeHealthClaimsOverview';
 import PropertyCasualtyClaimsOverview from '@/components/claims/PropertyCasualtyClaimsOverview';
 import AutomotiveClaimsOverview from '@/components/claims/AutomotiveClaimsOverview';
@@ -48,6 +49,7 @@ export default function WorkbenchView({
   const [activeView, setActiveView] = useState<ViewType>('overview');
   const [isPolicyReportOpen, setIsPolicyReportOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isDeepDiveOpen, setIsDeepDiveOpen] = useState(false);
   const [sourcePageNumber, setSourcePageNumber] = useState<number | undefined>(undefined);
   const { currentPersona, personaConfig } = usePersona();
 
@@ -110,7 +112,7 @@ export default function WorkbenchView({
           </div>
         );
       case 'source':
-        return <SourceReviewView application={selectedApp} />;
+        return <SourceReviewView application={selectedApp} initialPage={sourcePageNumber} />;
       case 'overview':
       default:
         if (currentPersona === 'automotive_claims') {
@@ -164,6 +166,7 @@ export default function WorkbenchView({
                   onPolicyClick={(policyId) => {
                     setIsPolicyReportOpen(true);
                   }}
+                  onDeepDive={() => setIsDeepDiveOpen(true)}
                 />
                 <PolicySummaryPanel
                   application={selectedApp}
@@ -206,6 +209,20 @@ export default function WorkbenchView({
           onClose={() => setIsPolicyReportOpen(false)}
           application={selectedApp}
           onRerunAnalysis={handleRerunAnalysis}
+        />
+        
+        <BodySystemDeepDiveModal
+          isOpen={isDeepDiveOpen}
+          onClose={() => setIsDeepDiveOpen(false)}
+          application={selectedApp}
+          onNavigateToPage={(page) => {
+            setIsDeepDiveOpen(false);
+            setSourcePageNumber(page);
+            setActiveView('source');
+          }}
+          onApplicationUpdate={(app) => {
+            setSelectedApp(app);
+          }}
         />
       </div>
     );
