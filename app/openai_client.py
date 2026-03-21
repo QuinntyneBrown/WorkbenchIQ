@@ -81,6 +81,7 @@ def chat_completion(
     model_override: str | None = None,
     api_version_override: str | None = None,
     timeout: int | None = None,
+    extra_body: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Call Azure OpenAI / Foundry chat completions with retry logic and fallback.
 
@@ -102,6 +103,7 @@ def chat_completion(
         api_version_override: Optional API version to use instead of settings.api_version
         timeout: HTTP request timeout in seconds. If None, scales with max_tokens
                  (120s base + 1s per 100 tokens over 1200).
+        extra_body: Optional dict merged into the request body (e.g., data_sources for Bing Grounding).
     """
     # Validate settings - api_key is optional when using Azure AD
     if not settings.endpoint or not settings.deployment_name:
@@ -155,6 +157,8 @@ def chat_completion(
         "max_tokens": max_tokens,
         "model": model,
     }
+    if extra_body:
+        body.update(extra_body)
 
     # Compute HTTP timeout: explicit value, or scale with max_tokens
     if timeout is None:

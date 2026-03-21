@@ -411,10 +411,11 @@ def _bing_search(query: str, count: int = 10) -> list[dict[str, str]]:
 def _search_property_via_llm(
     address: str, purchase_price: float, property_type: str
 ) -> dict[str, Any]:
-    """Use Azure OpenAI with web grounding to gather property data.
+    """Use Azure OpenAI with Bing Grounding to gather live property data.
 
-    Falls back to the LLM's training knowledge if Bing grounding
-    is not configured.
+    When BING_SEARCH_API_KEY is configured, the LLM query is grounded
+    with live Bing web search results for up-to-date market data.
+    Falls back to the LLM's training knowledge otherwise.
     """
     data: dict[str, Any] = {
         "comps": [],
@@ -427,21 +428,23 @@ def _search_property_via_llm(
     }
 
     try:
+        import os
         from app.config import load_settings
         from app.openai_client import chat_completion
 
         settings = load_settings()
+        bing_api_key = os.environ.get("BING_SEARCH_API_KEY", "")
 
-        prompt = f"""You are a Canadian real estate data analyst. Research the following property and provide market data.
+        prompt = f"""You are a Canadian real estate data analyst. Research the following property and provide current market data.
 
 Property: {address}
 Purchase Price: ${purchase_price:,.0f} CAD
 Property Type: {property_type}
 
-Provide a JSON response with the following structure:
+Search for this property and similar recent sales in the same area. Provide a JSON response with:
 {{
   "area_name": "neighbourhood/city name",
-  "area_avg_price": approximate average home price for this area in CAD (number),
+  "area_avg_price": current average home price for this area in CAD (number),
   "comparable_sales": [
     {{"address": "nearby address", "sold_price": price_in_cad, "bedrooms": N, "bathrooms": N, "living_area": sqft, "sold_date": "YYYY-MM"}}
   ],
@@ -453,11 +456,28 @@ Provide a JSON response with the following structure:
     {{"category": "General|Rooms|Size|Exterior|Interior", "feature": "name", "value": "value"}}
   ],
   "market_trend": "up|down|stable",
-  "yoy_change_pct": approximate year-over-year price change percentage
+  "yoy_change_pct": year-over-year price change percentage
 }}
 
-Use your knowledge of Canadian real estate markets to provide realistic comparable sales and pricing data for the {address} area. Include 3-5 comparable properties.
+Include 3-5 comparable properties that have recently sold nearby. Use current market data.
 Return ONLY valid JSON, no markdown or explanation."""
+
+        # Build Bing Grounding data_sources if API key is available
+        extra_body = None
+        if bing_api_key:
+            extra_body = {
+                "data_sources": [
+                    {
+                        "type": "bing_grounding",
+                        "parameters": {
+                            "connection_id": bing_api_key,
+                        },
+                    }
+                ]
+            }
+            logger.info("Using Bing Grounding for property deep dive: %s", address)
+        else:
+            logger.info("No BING_SEARCH_API_KEY — using LLM knowledge for property deep dive")
 
         result = chat_completion(
             settings.openai,
@@ -468,6 +488,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             max_tokens=2000,
             temperature=0.3,
             timeout=60,
+            extra_body=extra_body,
         )
 
         content = (
