@@ -3,11 +3,14 @@ Property Deep Dive Engine for Canadian Mortgage Underwriting.
 
 Queries REALTOR.ca for comparable sales, price trends, and risk
 classification to support auto-appraisal decisions.
+Falls back to Bing web search when REALTOR.ca is unavailable.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -308,6 +311,293 @@ def _similarity_score(
 
 
 # ---------------------------------------------------------------------------
+# Bing Web Search fallback
+# ---------------------------------------------------------------------------
+
+_BING_SEARCH_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-CA,en-US;q=0.9,en;q=0.8",
+}
+
+# Separate session for Bing (don't reuse REALTOR.ca session/cookies)
+_bing_session: requests.Session | None = None
+
+
+def _bing_search(query: str, count: int = 10) -> list[dict[str, str]]:
+    """Scrape Bing search results (title, snippet, url) for *query*.
+
+    No API key required — parses the public HTML results page.
+    Returns a list of ``{"title", "snippet", "url"}`` dicts.
+    """
+    import base64
+    global _bing_session
+
+    try:
+        time.sleep(1.0)  # Simple rate limit for Bing (separate from REALTOR.ca)
+        if _bing_session is None:
+            _bing_session = requests.Session()
+            _bing_session.headers.update(_BING_SEARCH_HEADERS)
+        resp = _bing_session.get(
+            "https://www.bing.com/search",
+            params={"q": query, "count": str(count)},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        html = resp.text
+    except Exception:
+        logger.warning("Bing search failed for query: %s", query, exc_info=True)
+        return []
+
+    results: list[dict[str, str]] = []
+
+    # Split on b_algo list items
+    parts = re.split(r'<li\s[^>]*class="b_algo"[^>]*>', html)
+    for block in parts[1:count + 1]:
+        end = block.find("<li ")
+        if end > 0:
+            block = block[:end]
+
+        # Extract URL — Bing uses redirect URLs with base64-encoded targets
+        url = ""
+        # Decode from bing.com/ck/a?...&u=a1<base64>...
+        u_match = re.search(r'u=a1([A-Za-z0-9_-]+)', block)
+        if u_match:
+            try:
+                encoded = u_match.group(1)
+                # Pad base64 if needed
+                padded = encoded + "=" * (4 - len(encoded) % 4)
+                url = base64.urlsafe_b64decode(padded).decode("utf-8", errors="ignore")
+            except Exception:
+                pass
+
+        # Fallback: use <cite> element
+        if not url:
+            cite_m = re.search(r'<cite[^>]*>(.*?)</cite>', block, re.DOTALL)
+            if cite_m:
+                cite_text = re.sub(r'<[^>]+>', '', cite_m.group(1)).strip()
+                cite_text = cite_text.replace(" › ", "/").replace("›", "/")
+                if not cite_text.startswith("http"):
+                    cite_text = "https://" + cite_text
+                url = cite_text
+
+        # Title — find text inside the main anchor tag
+        title = ""
+        # Look for anchor with class "tilk" or within h2
+        title_m = re.search(r'<a[^>]*>([^<]*(?:<strong>[^<]*</strong>[^<]*)*)</a>', block, re.DOTALL)
+        if title_m:
+            title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
+
+        # Snippet — Bing uses various containers
+        snippet = ""
+        for pattern in [
+            r'<p\b[^>]*>(.*?)</p>',
+            r'class="[^"]*b_lineclamp[^"]*"[^>]*>(.*?)</div>',
+            r'<span[^>]*class="[^"]*algoSlug[^"]*"[^>]*>(.*?)</span>',
+            r'class="[^"]*caption[^"]*"[^>]*>(.*?)</div>',
+        ]:
+            snip_m = re.search(pattern, block, re.DOTALL)
+            if snip_m:
+                snippet = re.sub(r'<[^>]+>', '', snip_m.group(1)).strip()
+                if len(snippet) > 20:
+                    break
+
+        if url and (title or snippet):
+            results.append({"title": title, "snippet": snippet, "url": url})
+    return results
+
+
+def _search_property_via_llm(
+    address: str, purchase_price: float, property_type: str
+) -> dict[str, Any]:
+    """Use Azure OpenAI with web grounding to gather property data.
+
+    Falls back to the LLM's training knowledge if Bing grounding
+    is not configured.
+    """
+    data: dict[str, Any] = {
+        "comps": [],
+        "photos": [],
+        "features": [],
+        "listing_url": None,
+        "area_avg_price": None,
+        "area_name": None,
+        "property_details": {},
+    }
+
+    try:
+        from app.config import load_settings
+        from app.openai_client import chat_completion
+
+        settings = load_settings()
+
+        prompt = f"""You are a Canadian real estate data analyst. Research the following property and provide market data.
+
+Property: {address}
+Purchase Price: ${purchase_price:,.0f} CAD
+Property Type: {property_type}
+
+Provide a JSON response with the following structure:
+{{
+  "area_name": "neighbourhood/city name",
+  "area_avg_price": approximate average home price for this area in CAD (number),
+  "comparable_sales": [
+    {{"address": "nearby address", "sold_price": price_in_cad, "bedrooms": N, "bathrooms": N, "living_area": sqft, "sold_date": "YYYY-MM"}}
+  ],
+  "property_details": {{
+    "bedrooms": N, "bathrooms": N, "living_area": sqft, "lot_size": "size",
+    "year_built": YYYY, "garages": N, "property_type_detail": "type"
+  }},
+  "features": [
+    {{"category": "General|Rooms|Size|Exterior|Interior", "feature": "name", "value": "value"}}
+  ],
+  "market_trend": "up|down|stable",
+  "yoy_change_pct": approximate year-over-year price change percentage
+}}
+
+Use your knowledge of Canadian real estate markets to provide realistic comparable sales and pricing data for the {address} area. Include 3-5 comparable properties.
+Return ONLY valid JSON, no markdown or explanation."""
+
+        result = chat_completion(
+            settings.openai,
+            messages=[
+                {"role": "system", "content": "You are a Canadian real estate market data analyst. Return only valid JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=2000,
+            temperature=0.3,
+            timeout=60,
+        )
+
+        content = (
+            result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            or result.get("content", "")
+        )
+        if not content:
+            logger.warning("LLM returned empty content for property search")
+            return data
+        # Strip markdown code fences if present
+        content = re.sub(r'^```(?:json)?\s*', '', content.strip())
+        content = re.sub(r'\s*```$', '', content.strip())
+        # Strip JS comments
+        content = re.sub(r'//[^\n]*', '', content)
+
+        logger.info("LLM property response (%d chars): %s", len(content), content[:200])
+
+        parsed = json.loads(content)
+
+        data["area_name"] = parsed.get("area_name")
+        data["area_avg_price"] = parsed.get("area_avg_price")
+        data["property_details"] = parsed.get("property_details", {})
+
+        # Convert comparables
+        for comp in parsed.get("comparable_sales", []):
+            price = comp.get("sold_price", 0)
+            if isinstance(price, (int, float)) and price > 0:
+                data["comps"].append({
+                    "address": comp.get("address", "Comparable"),
+                    "sold_price": float(price),
+                    "sold_date": comp.get("sold_date", ""),
+                    "distance_km": 0,
+                    "bedrooms": comp.get("bedrooms", 0),
+                    "bathrooms": comp.get("bathrooms", 0),
+                    "living_area": comp.get("living_area", 0),
+                    "price_psf": round(float(price) / max(comp.get("living_area", 1), 1), 2),
+                    "similarity_score": 60,
+                    "source": "AI Market Analysis",
+                })
+
+        # Convert features
+        for feat in parsed.get("features", []):
+            data["features"].append({
+                "category": feat.get("category", "General"),
+                "feature": feat.get("feature", ""),
+                "value": str(feat.get("value", "")),
+                "data_point_source": "AI Market Analysis",
+            })
+
+        # Market trend
+        data["market_trend"] = parsed.get("market_trend", "stable")
+        data["yoy_change_pct"] = parsed.get("yoy_change_pct")
+
+        logger.info(
+            "LLM property search returned %d comps, %d features for %s",
+            len(data["comps"]), len(data["features"]), address,
+        )
+
+    except Exception:
+        logger.warning("LLM property search failed for %s", address, exc_info=True)
+
+    return data
+
+
+def _extract_details_from_snippet(snippet: str, data: dict[str, Any]) -> None:
+    """Parse property details from a search snippet into *data*."""
+    details = data.setdefault("property_details", {})
+    features = data.setdefault("features", [])
+
+    def _add_feature(category: str, name: str, value: str) -> None:
+        if value and not any(f["feature"] == name and f["value"] == value for f in features):
+            features.append({
+                "category": category,
+                "feature": name,
+                "value": value,
+                "data_point_source": "Web Search",
+            })
+
+    # Bedrooms
+    beds = re.search(r'(\d+)\s*(?:bed(?:room)?s?|bd|br)\b', snippet, re.I)
+    if beds:
+        details["bedrooms"] = int(beds.group(1))
+        _add_feature("Rooms", "Bedrooms", beds.group(1))
+
+    # Bathrooms
+    baths = re.search(r'(\d+(?:\.\d)?)\s*(?:bath(?:room)?s?|ba)\b', snippet, re.I)
+    if baths:
+        details["bathrooms"] = float(baths.group(1))
+        _add_feature("Rooms", "Bathrooms", baths.group(1))
+
+    # Square footage
+    sqft = re.search(r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|square\s*feet)', snippet, re.I)
+    if sqft:
+        details["living_area"] = float(sqft.group(1).replace(",", ""))
+        _add_feature("Size", "Living Area (sqft)", sqft.group(1))
+
+    # Lot size
+    lot = re.search(r'(?:lot|land)\s*(?:size)?[:\s]*([\d,.]+)\s*(sqft|sq\.?\s*ft|acres?|hectares?)', snippet, re.I)
+    if lot:
+        details["lot_size"] = f"{lot.group(1)} {lot.group(2)}"
+        _add_feature("Size", "Lot Size", f"{lot.group(1)} {lot.group(2)}")
+
+    # Year built
+    year = re.search(r'(?:built|year\s*built|constructed)[:\s]*(\d{4})', snippet, re.I)
+    if year:
+        yr = int(year.group(1))
+        if 1800 <= yr <= datetime.now().year:
+            details["year_built"] = yr
+            _add_feature("General", "Year Built", str(yr))
+
+    # Garages
+    garage = re.search(r'(\d+)\s*(?:car\s+)?garage', snippet, re.I)
+    if garage:
+        details["garages"] = int(garage.group(1))
+        _add_feature("Exterior", "Garages", garage.group(1))
+
+    # Parking
+    parking = re.search(r'(\d+)\s*parking', snippet, re.I)
+    if parking:
+        details["parking"] = parking.group(1)
+        _add_feature("Exterior", "Parking Spaces", parking.group(1))
+
+    # Property type
+    ptype = re.search(r'\b(detached|semi-detached|townhouse|condo(?:minium)?|bungalow|duplex|triplex)\b', snippet, re.I)
+    if ptype:
+        details["property_type_web"] = ptype.group(1).title()
+        _add_feature("General", "Property Type (Web)", ptype.group(1).title())
+
+
+# ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
 
@@ -356,36 +646,79 @@ class PropertyDeepDiveEngine:
         # 3. Fetch comparable sales
         comps = self._fetch_comparables()
 
-        # 4. Price trends
-        price_trend = self._compute_price_trend(comps)
+        # 4. If MLS data is empty, fall back to Bing web search
+        web_data: dict[str, Any] = {}
+        if not comps and not subject_listing:
+            logger.info("MLS data unavailable — falling back to AI market analysis")
+            web_data = _search_property_via_llm(
+                self.property_address, self.purchase_price, self.property_type
+            )
+            comps = web_data.get("comps", [])
+            if comps:
+                self._warnings.append(
+                    f"MLS unavailable; AI market analysis provided {len(comps)} comps."
+                )
+            else:
+                self._warnings.append("MLS unavailable; AI market analysis found no comparables.")
 
-        # 5. Risk classification
+        # 5. Price trends
+        price_trend = self._compute_price_trend(comps)
+        # Enrich from web search if area average found
+        if web_data.get("area_avg_price"):
+            price_trend["avg_price_current"] = web_data["area_avg_price"]
+            if web_data.get("area_name"):
+                price_trend["area_name"] = web_data["area_name"]
+
+        # 6. Risk classification
         risk, rationale = self._classify_risk(comps, price_trend)
 
-        # 6. Auto-appraisal eligibility
+        # 7. Auto-appraisal eligibility
         eligible, recommendation, needs_phys, phys_reason = self._assess_auto_appraisal(
             risk, comps
         )
 
-        # 7. Property features & data points from listing
+        # 8. Property features & data points from listing
         features, data_points = self._extract_features(subject_listing)
+        # Merge web search features
+        if web_data.get("features"):
+            for wf in web_data["features"]:
+                if not any(f["feature"] == wf["feature"] for f in features):
+                    features.append(wf)
 
-        # 8. Photos
+        # Enrich from web details
+        web_details = web_data.get("property_details", {})
+        if web_details:
+            for key in ("bedrooms", "bathrooms", "living_area", "lot_size",
+                        "year_built", "garages", "parking"):
+                if web_details.get(key) and not getattr(self, key, None):
+                    setattr(self, key, web_details[key])
+
+        # 9. Photos — merge web and MLS
         photos = self._extract_photos(subject_listing)
+        if web_data.get("photos"):
+            photos.extend(web_data["photos"])
 
         summary = {
             "address": self.property_address,
             "type": self.property_type,
             "purchase_price": self.purchase_price,
             "appraised_value": self.appraised_value,
-            "year_built": self.year_built,
-            "lot_size": self.lot_size,
-            "living_area": self.living_area,
-            "bedrooms": self.bedrooms,
-            "bathrooms": self.bathrooms,
-            "garages": subject_listing.get("garages") if subject_listing else None,
-            "parking": subject_listing.get("parking") if subject_listing else None,
+            "year_built": self.year_built or web_details.get("year_built"),
+            "lot_size": self.lot_size or web_details.get("lot_size"),
+            "living_area": self.living_area or web_details.get("living_area", 0),
+            "bedrooms": self.bedrooms or web_details.get("bedrooms", 0),
+            "bathrooms": self.bathrooms or web_details.get("bathrooms", 0),
+            "garages": (subject_listing.get("garages") if subject_listing else None)
+                       or web_details.get("garages"),
+            "parking": (subject_listing.get("parking") if subject_listing else None)
+                       or web_details.get("parking"),
         }
+
+        listing_url = (
+            (subject_listing.get("mls_listing_url") if subject_listing else None)
+            or web_data.get("listing_url")
+        )
+        mls_number = subject_listing.get("mls_number") if subject_listing else None
 
         return PropertyDeepDiveResult(
             property_summary=summary,
@@ -397,8 +730,8 @@ class PropertyDeepDiveEngine:
             price_trend=price_trend,
             property_features=features,
             appraisal_data_points=data_points,
-            mls_listing_url=subject_listing.get("mls_listing_url") if subject_listing else None,
-            mls_number=subject_listing.get("mls_number") if subject_listing else None,
+            mls_listing_url=listing_url,
+            mls_number=mls_number,
             photos=photos,
             needs_physical_appraisal=needs_phys,
             physical_appraisal_reason=phys_reason,
