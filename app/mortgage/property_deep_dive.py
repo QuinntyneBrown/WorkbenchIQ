@@ -462,14 +462,15 @@ Search for this property and similar recent sales in the same area. Provide a JS
 Include 3-5 comparable properties that have recently sold nearby. Use current market data.
 Return ONLY valid JSON, no markdown or explanation."""
 
-        # Build Bing Grounding data_sources if API key is available
+        # Build Bing Grounding tools config if API key is available
         extra_body = None
         if bing_api_key:
+            # Use Bing Grounding via Azure OpenAI Responses/tools API
             extra_body = {
-                "data_sources": [
+                "tools": [
                     {
                         "type": "bing_grounding",
-                        "parameters": {
+                        "bing_grounding": {
                             "connection_id": bing_api_key,
                         },
                     }
@@ -479,17 +480,39 @@ Return ONLY valid JSON, no markdown or explanation."""
         else:
             logger.info("No BING_SEARCH_API_KEY — using LLM knowledge for property deep dive")
 
-        result = chat_completion(
-            settings.openai,
-            messages=[
-                {"role": "system", "content": "You are a Canadian real estate market data analyst. Return only valid JSON."},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=2000,
-            temperature=0.3,
-            timeout=60,
-            extra_body=extra_body,
-        )
+        # Try with Bing Grounding first, fall back to plain LLM if it fails
+        result = None
+        used_grounding = False
+        if extra_body:
+            try:
+                result = chat_completion(
+                    settings.openai,
+                    messages=[
+                        {"role": "system", "content": "You are a Canadian real estate market data analyst. Search the web for current property data. Return only valid JSON."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=2000,
+                    temperature=0.3,
+                    timeout=60,
+                    extra_body=extra_body,
+                )
+                used_grounding = True
+                logger.info("Bing Grounding call succeeded")
+            except Exception as e:
+                logger.warning("Bing Grounding failed, falling back to plain LLM: %s", e)
+                result = None
+
+        if result is None:
+            result = chat_completion(
+                settings.openai,
+                messages=[
+                    {"role": "system", "content": "You are a Canadian real estate market data analyst. Return only valid JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=2000,
+                temperature=0.3,
+                timeout=60,
+            )
 
         content = (
             result.get("choices", [{}])[0].get("message", {}).get("content", "")
