@@ -408,14 +408,79 @@ def _bing_search(query: str, count: int = 10) -> list[dict[str, str]]:
     return results
 
 
+# ---------------------------------------------------------------------------
+# Azure OpenAI Responses API with web_search_preview (Bing Grounding)
+# ---------------------------------------------------------------------------
+
+_RESPONSES_API_VERSION = "2025-04-01-preview"
+_RESPONSES_API_MODEL = "gpt-4.1"
+
+
+def _call_responses_api(prompt: str) -> str | None:
+    """Call the Azure OpenAI Responses API with web_search_preview tool.
+
+    Uses the AIServices endpoint (separate from the main Chat Completions
+    endpoint) which supports the Responses API with built-in Bing Grounding.
+    Returns the text output or None on failure.
+
+    Requires env var AZURE_RESPONSES_API_ENDPOINT to be set.
+    """
+    import os
+    endpoint = os.environ.get("AZURE_RESPONSES_API_ENDPOINT", "").rstrip("/")
+    if not endpoint:
+        return None
+
+    try:
+        from azure.identity import DefaultAzureCredential
+        credential = DefaultAzureCredential()
+        token = credential.get_token("https://cognitiveservices.azure.com/.default")
+    except Exception:
+        logger.warning("Azure AD auth failed for Responses API", exc_info=True)
+        return None
+
+    url = f"{endpoint}/openai/responses"
+    headers = {
+        "Authorization": f"Bearer {token.token}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "model": _RESPONSES_API_MODEL,
+        "tools": [{"type": "web_search_preview"}],
+        "input": prompt,
+    }
+
+    try:
+        _rate_limit()
+        resp = requests.post(
+            url,
+            params={"api-version": _RESPONSES_API_VERSION},
+            headers=headers,
+            json=body,
+            timeout=90,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+
+        # Extract text from the Responses API output structure
+        for item in result.get("output", []):
+            if item.get("type") == "message":
+                for content in item.get("content", []):
+                    if content.get("type") == "output_text":
+                        return content.get("text", "")
+        return None
+    except Exception:
+        logger.warning("Responses API call failed", exc_info=True)
+        return None
+
+
 def _search_property_via_llm(
     address: str, purchase_price: float, property_type: str
 ) -> dict[str, Any]:
-    """Use Azure OpenAI with Bing Grounding to gather live property data.
+    """Gather property market data using AI with live web grounding.
 
-    When BING_SEARCH_API_KEY is configured, the LLM query is grounded
-    with live Bing web search results for up-to-date market data.
-    Falls back to the LLM's training knowledge otherwise.
+    Tries the Azure OpenAI Responses API (with Bing web search) first for
+    live, cited data. Falls back to the standard Chat Completions API
+    (LLM training knowledge) if the Responses API is unavailable.
     """
     data: dict[str, Any] = {
         "comps": [],
@@ -427,15 +492,7 @@ def _search_property_via_llm(
         "property_details": {},
     }
 
-    try:
-        import os
-        from app.config import load_settings
-        from app.openai_client import chat_completion
-
-        settings = load_settings()
-        bing_api_key = os.environ.get("BING_SEARCH_API_KEY", "")
-
-        prompt = f"""You are a Canadian real estate data analyst. Research the following property and provide current market data.
+    json_prompt = f"""Research the following Canadian property and provide current market data.
 
 Property: {address}
 Purchase Price: ${purchase_price:,.0f} CAD
@@ -462,117 +519,104 @@ Search for this property and similar recent sales in the same area. Provide a JS
 Include 3-5 comparable properties that have recently sold nearby. Use current market data.
 Return ONLY valid JSON, no markdown or explanation."""
 
-        # Build Bing Grounding tools config if API key is available
-        extra_body = None
-        if bing_api_key:
-            # Use Bing Grounding via Azure OpenAI Responses/tools API
-            extra_body = {
-                "tools": [
-                    {
-                        "type": "bing_grounding",
-                        "bing_grounding": {
-                            "connection_id": bing_api_key,
-                        },
-                    }
-                ]
-            }
-            logger.info("Using Bing Grounding for property deep dive: %s", address)
-        else:
-            logger.info("No BING_SEARCH_API_KEY — using LLM knowledge for property deep dive")
+    content: str | None = None
+    source = "unknown"
 
-        # Try with Bing Grounding first, fall back to plain LLM if it fails
-        result = None
-        used_grounding = False
-        if extra_body:
-            try:
-                result = chat_completion(
-                    settings.openai,
-                    messages=[
-                        {"role": "system", "content": "You are a Canadian real estate market data analyst. Search the web for current property data. Return only valid JSON."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    max_tokens=2000,
-                    temperature=0.3,
-                    timeout=60,
-                    extra_body=extra_body,
-                )
-                used_grounding = True
-                logger.info("Bing Grounding call succeeded")
-            except Exception as e:
-                logger.warning("Bing Grounding failed, falling back to plain LLM: %s", e)
-                result = None
+    # --- Strategy 1: Responses API with live Bing web search ---
+    try:
+        raw = _call_responses_api(
+            f"You are a Canadian real estate market data analyst. "
+            f"Return only valid JSON.\n\n{json_prompt}"
+        )
+        if raw:
+            # Strip markdown fences / comments the model may still add
+            cleaned = re.sub(r'^```(?:json)?\s*', '', raw.strip())
+            cleaned = re.sub(r'\s*```$', '', cleaned.strip())
+            cleaned = re.sub(r'//[^\n]*', '', cleaned)
+            if cleaned.startswith("{"):
+                content = cleaned
+                source = "Bing Web Search"
+                logger.info("Responses API returned %d chars for %s", len(content), address)
+    except Exception:
+        logger.debug("Responses API path failed, trying chat_completion", exc_info=True)
 
-        if result is None:
+    # --- Strategy 2: Chat Completions (LLM training knowledge) ---
+    if content is None:
+        try:
+            from app.config import load_settings
+            from app.openai_client import chat_completion
+
+            settings = load_settings()
             result = chat_completion(
                 settings.openai,
                 messages=[
                     {"role": "system", "content": "You are a Canadian real estate market data analyst. Return only valid JSON."},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": json_prompt},
                 ],
                 max_tokens=2000,
                 temperature=0.3,
                 timeout=60,
             )
+            raw = (
+                result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                or result.get("content", "")
+            )
+            if raw:
+                cleaned = re.sub(r'^```(?:json)?\s*', '', raw.strip())
+                cleaned = re.sub(r'\s*```$', '', cleaned.strip())
+                cleaned = re.sub(r'//[^\n]*', '', cleaned)
+                content = cleaned
+                source = "AI Market Analysis"
+                logger.info("chat_completion returned %d chars for %s", len(content), address)
+        except Exception:
+            logger.warning("chat_completion path also failed for %s", address, exc_info=True)
 
-        content = (
-            result.get("choices", [{}])[0].get("message", {}).get("content", "")
-            or result.get("content", "")
-        )
-        if not content:
-            logger.warning("LLM returned empty content for property search")
-            return data
-        # Strip markdown code fences if present
-        content = re.sub(r'^```(?:json)?\s*', '', content.strip())
-        content = re.sub(r'\s*```$', '', content.strip())
-        # Strip JS comments
-        content = re.sub(r'//[^\n]*', '', content)
+    # --- Parse the JSON content ---
+    if not content:
+        logger.warning("No property data obtained for %s", address)
+        return data
 
-        logger.info("LLM property response (%d chars): %s", len(content), content[:200])
-
+    try:
         parsed = json.loads(content)
+    except json.JSONDecodeError:
+        logger.warning("Failed to parse property JSON for %s: %s", address, content[:200])
+        return data
 
-        data["area_name"] = parsed.get("area_name")
-        data["area_avg_price"] = parsed.get("area_avg_price")
-        data["property_details"] = parsed.get("property_details", {})
+    # Populate data from parsed response
+    data["area_name"] = parsed.get("area_name")
+    data["area_avg_price"] = parsed.get("area_avg_price")
+    data["property_details"] = parsed.get("property_details", {})
+    data["market_trend"] = parsed.get("market_trend", "stable")
+    data["yoy_change_pct"] = parsed.get("yoy_change_pct")
 
-        # Convert comparables
-        for comp in parsed.get("comparable_sales", []):
-            price = comp.get("sold_price", 0)
-            if isinstance(price, (int, float)) and price > 0:
-                data["comps"].append({
-                    "address": comp.get("address", "Comparable"),
-                    "sold_price": float(price),
-                    "sold_date": comp.get("sold_date", ""),
-                    "distance_km": 0,
-                    "bedrooms": comp.get("bedrooms", 0),
-                    "bathrooms": comp.get("bathrooms", 0),
-                    "living_area": comp.get("living_area", 0),
-                    "price_psf": round(float(price) / max(comp.get("living_area", 1), 1), 2),
-                    "similarity_score": 60,
-                    "source": "AI Market Analysis",
-                })
-
-        # Convert features
-        for feat in parsed.get("features", []):
-            data["features"].append({
-                "category": feat.get("category", "General"),
-                "feature": feat.get("feature", ""),
-                "value": str(feat.get("value", "")),
-                "data_point_source": "AI Market Analysis",
+    for comp in parsed.get("comparable_sales", []):
+        price = comp.get("sold_price", 0)
+        if isinstance(price, (int, float)) and price > 0:
+            data["comps"].append({
+                "address": comp.get("address", "Comparable"),
+                "sold_price": float(price),
+                "sold_date": comp.get("sold_date", ""),
+                "distance_km": 0,
+                "bedrooms": comp.get("bedrooms", 0),
+                "bathrooms": comp.get("bathrooms", 0),
+                "living_area": comp.get("living_area", 0),
+                "price_psf": round(float(price) / max(comp.get("living_area", 1), 1), 2),
+                "similarity_score": 60,
+                "source": source,
             })
 
-        # Market trend
-        data["market_trend"] = parsed.get("market_trend", "stable")
-        data["yoy_change_pct"] = parsed.get("yoy_change_pct")
+    for feat in parsed.get("features", []):
+        data["features"].append({
+            "category": feat.get("category", "General"),
+            "feature": feat.get("feature", ""),
+            "value": str(feat.get("value", "")),
+            "data_point_source": source,
+        })
 
-        logger.info(
-            "LLM property search returned %d comps, %d features for %s",
-            len(data["comps"]), len(data["features"]), address,
-        )
-
-    except Exception:
-        logger.warning("LLM property search failed for %s", address, exc_info=True)
-
+    logger.info(
+        "Property search via %s returned %d comps, %d features for %s",
+        source, len(data["comps"]), len(data["features"]), address,
+    )
     return data
 
 
