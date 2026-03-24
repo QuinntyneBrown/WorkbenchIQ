@@ -1,0 +1,143 @@
+@startuml class-frontend
+!theme plain
+skinparam classAttributeIconSize 0
+skinparam classFontSize 12
+skinparam linetype ortho
+
+title Frontend Component Architecture\n(Angular Equivalent: Modules, Components, Services)
+
+package "State Management (NgRx / Angular Service equivalent)" #F0F8FF {
+    class PersonaContext <<React Context>> {
+        +currentPersona: PersonaId
+        +personaConfig: PersonaConfig
+        +setPersona(persona: PersonaId): void
+        +isLoading: boolean
+        --
+        Persists to localStorage
+        (Angular: Injectable service with BehaviorSubject)
+    }
+
+    class APIClient <<lib/api.ts>> {
+        +getMediaBaseUrl(): string
+        +fetchApplications(): Promise<ApplicationListItem[]>
+        +fetchApplication(id): Promise<ApplicationMetadata>
+        +createApplication(formData): Promise<ApplicationMetadata>
+        +deleteApplication(id): Promise<void>
+        +triggerExtraction(id): Promise<void>
+        +triggerAnalysis(id, sections): Promise<void>
+        +sendChatMessage(id, message): Promise<ChatResponse>
+        --
+        Smart URL resolution for Azure/local
+        (Angular: HttpClient service with interceptors)
+    }
+}
+
+package "Pages (Angular Route Components)" #FFF8F0 {
+    class RootLayout <<layout.tsx>> {
+        Wraps app in PersonaProvider
+        (Angular: AppComponent with router-outlet)
+    }
+
+    class LandingPage <<page.tsx>> {
+        Application list with pagination
+        New application creation
+        Persona selector
+        (Angular: HomeComponent)
+    }
+
+    class AdminPage <<admin/page.tsx>> {
+        Prompt editor (CRUD)
+        Glossary management
+        Policy management
+        Analyzer status
+        RAG statistics
+        (Angular: AdminModule with child routes)
+    }
+
+    class LoginPage <<login/page.tsx>> {
+        Azure AD integration (future)
+        (Angular: AuthModule)
+    }
+}
+
+package "Core Components (Angular SharedModule)" #F0FFF0 {
+    class WorkbenchView {
+        Main workbench layout
+        Tab-based section navigation
+        Document viewer + analysis panels
+        (Angular: DashboardComponent)
+    }
+
+    class TopNav {
+        Header navigation bar
+        Persona selector dropdown
+        Application list dropdown
+        (Angular: HeaderComponent)
+    }
+
+    class ChatDrawer {
+        Slide-out "Ask IQ" panel
+        Message input + history
+        Rich response rendering
+        (Angular: ChatSidenavComponent)
+    }
+}
+
+package "Feature Components (Angular Feature Modules)" #FFFFF0 {
+    package "Chat Module" {
+        class ChatCards {
+            Renders structured JSON responses
+            risk_factors | policy_list |
+            recommendation | comparison
+        }
+        class ChatHistoryPanel {
+            Conversation listing & switching
+        }
+        class PolicyDetailModal {
+            Expandable policy citations
+        }
+    }
+
+    package "Claims Module" {
+        class AutomotiveClaimsOverview
+        class DamageViewer
+        class EvidenceGallery
+        class ClaimsSummary
+        class EligibilityPanel
+    }
+
+    package "Medical Module" {
+        class BodyDiagram
+        class BodySystemDeepDiveModal
+        class AbnormalLabsCard
+        class LabResultsPanel
+        class PatientHeader
+    }
+
+    package "Shared Components" {
+        class CitableValue
+        class CitationTooltip
+        class ChronologicalOverview
+        class BatchSummariesPanel
+    }
+}
+
+package "API Routes (Angular HttpInterceptor equivalent)" #FFF0F0 {
+    class CatchAllProxy <<"[...path]/route.ts">> {
+        Forwards /api/* to backend:8000/api/*
+        Handles multipart/form-data
+        Binary response passthrough
+        (Angular: HttpInterceptor + environment.ts)
+    }
+}
+
+RootLayout --> PersonaContext : provides
+LandingPage --> APIClient : uses
+WorkbenchView --> APIClient : uses
+ChatDrawer --> APIClient : uses
+AdminPage --> APIClient : uses
+WorkbenchView --> ChatDrawer : opens
+WorkbenchView --> TopNav : includes
+CatchAllProxy ..> APIClient : proxied by
+
+@enduml

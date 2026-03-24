@@ -1,0 +1,78 @@
+@startuml sequence-document-upload
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 200
+
+title Document Upload & Extraction Flow\n(.NET: Controller → Service → External API polling)
+
+actor "User" as user
+participant "Next.js Frontend\n(Angular equivalent)" as fe
+participant "Next.js API Proxy\n(Angular HttpInterceptor)" as proxy
+participant "FastAPI Backend\n(ASP.NET Controller)" as api
+participant "StorageProvider\n(IRepository)" as store
+participant "Azure Content\nUnderstanding" as acu
+participant "Azure OpenAI\n(GPT-4)" as aoai
+
+== Application Creation ==
+
+user -> fe : Select persona +\nUpload document(s)
+fe -> proxy : POST /api/applications\n(multipart/form-data)
+proxy -> api : Forward request
+api -> store : save_file(app_id, file)
+store --> api : file_path
+api -> store : save_metadata(app_id, metadata)
+store --> api : success
+api --> proxy : 201 { app_id, status: "created" }
+proxy --> fe : Response
+fe --> user : Show application card
+
+== Content Understanding Extraction ==
+
+user -> fe : Click "Extract" button
+fe -> proxy : POST /api/applications/{id}/extract
+proxy -> api : Forward request
+api --> proxy : 202 Accepted\n(processing started)
+proxy --> fe : Response
+
+note over api : Background Task\n(.NET: IHostedService\nor BackgroundService)
+
+api -> store : load_file(app_id, filename)
+store --> api : file_bytes
+
+loop For each uploaded file
+    api -> api : detect_media_type(file)
+    alt PDF / Document
+        api -> acu : POST /content-understanding/analyze\n(document + field schema)
+        acu --> api : operation-location URL
+        loop Poll until complete (900s timeout)
+            api -> acu : GET operation-location
+            acu --> api : { status: "running" | "succeeded" }
+        end
+        acu --> api : { fields, confidence, bounding_regions }
+    else Image (JPG/PNG)
+        api -> acu : POST /content-understanding/analyze\n(image analyzer)
+        acu --> api : { damage_areas, annotations }
+    else Video (MP4)
+        api -> acu : POST /content-understanding/analyze\n(video analyzer)
+        acu --> api : { keyframes, extracted_data }
+    end
+end
+
+api -> api : consolidate_results(all_files)
+api -> store : save_metadata(app_id,\nupdated_metadata)
+
+== Frontend Polling ==
+
+loop Poll every 3 seconds
+    fe -> proxy : GET /api/applications/{id}
+    proxy -> api : Forward
+    api -> store : load_metadata(app_id)
+    store --> api : metadata
+    api --> proxy : { processing_status, extracted_fields }
+    proxy --> fe : Response
+    alt processing_status == null
+        fe --> user : Show extracted fields\nwith confidence badges
+    end
+end
+
+@enduml

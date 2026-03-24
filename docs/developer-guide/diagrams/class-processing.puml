@@ -1,0 +1,142 @@
+@startuml class-processing
+!theme plain
+skinparam classAttributeIconSize 0
+skinparam classFontSize 12
+skinparam linetype ortho
+
+title Processing & AI Integration Classes\n(.NET Equivalent: Application Services & External Clients)
+
+package "Content Understanding Client (HttpClient wrapper)" #F0F8FF {
+    class ContentUnderstandingClient {
+        -settings: ContentUnderstandingSettings
+        -credential: DefaultAzureCredential
+        --
+        +analyze_document(file_path, analyzer_id): Dict
+        +analyze_document_with_confidence(file_path, schema): ExtractionResult
+        +analyze_image(file_path, analyzer_id): Dict
+        +analyze_video(file_path, analyzer_id): Dict
+        +create_analyzer(name, schema): str
+        +get_analyzer_status(analyzer_id): Dict
+        -_poll_result(operation_url): Dict
+        -_get_auth_headers(): Dict
+    }
+
+    class ExtractionResult {
+        +fields: Dict[str, ExtractedField]
+        +raw_result: Dict
+        +confidence_summary: ConfidenceSummary
+    }
+
+    class ExtractedField {
+        +name: str
+        +value: Any
+        +confidence: str
+        +source_text: Optional[str]
+        +bounding_regions: Optional[List]
+    }
+}
+
+package "OpenAI Client (HttpClient wrapper)" #FFF8F0 {
+    class OpenAIClient {
+        -settings: OpenAISettings
+        -credential: DefaultAzureCredential
+        --
+        +chat_completion(messages, temperature, max_tokens): Dict
+        -_get_client(endpoint, api_key): AzureOpenAI
+        -_retry_with_backoff(func): Any
+        -_fallback_completion(messages): Dict
+    }
+}
+
+package "Processing Pipeline (MediatR Handler equivalent)" #F0FFF0 {
+    class ProcessingOrchestrator {
+        -settings: Settings
+        -cu_client: ContentUnderstandingClient
+        -openai_client: OpenAIClient
+        --
+        +run_content_understanding(app_md): ApplicationMetadata
+        +run_analysis(app_md, sections): ApplicationMetadata
+        +run_risk_analysis(app_md): ApplicationMetadata
+        -_detect_processing_mode(file_size): str
+        -_process_file(file_info): ProcessingResult
+        -_consolidate_results(results): Dict
+    }
+
+    class LargeDocumentProcessor {
+        -settings: ProcessingSettings
+        -openai_client: OpenAIClient
+        --
+        +process(markdown, fields): ConsolidatedContext
+        -_split_into_batches(markdown): List[str]
+        -_summarize_batch(batch): str
+        -_consolidate_summaries(summaries): str
+        -_detect_mode(file_size_kb): str
+    }
+
+    enum ProcessingMode {
+        STANDARD
+        LARGE_DOCUMENT
+    }
+
+    class ProcessingResult {
+        +file_id: str
+        +filename: str
+        +media_type: str
+        +status: ProcessingStatus
+        +raw_result: Optional[Dict]
+        +extracted_data: Any
+        +error_message: Optional[str]
+        +processing_time_seconds: float
+    }
+
+    enum ProcessingStatus {
+        PENDING
+        PROCESSING
+        COMPLETED
+        FAILED
+        SKIPPED
+    }
+}
+
+package "Multimodal Processing (Strategy Pattern)" #FFFFF0 {
+    class MultimodalProcessor {
+        -document_extractor: DocumentExtractor
+        -image_extractor: ImageExtractor
+        -video_extractor: VideoExtractor
+        -router: MediaRouter
+        --
+        +process_files(files): List[ProcessingResult]
+        -_process_single(file): ProcessingResult
+    }
+
+    class MediaRouter {
+        +route(file): str
+        +detect_media_type(filename): str
+    }
+
+    class DocumentExtractor {
+        +extract(file_path, schema): ExtractionResult
+    }
+
+    class ImageExtractor {
+        +extract(file_path, analyzer_id): List[DamageArea]
+    }
+
+    class VideoExtractor {
+        +extract(file_path, analyzer_id): VideoData
+    }
+
+    MultimodalProcessor --> MediaRouter
+    MultimodalProcessor --> DocumentExtractor
+    MultimodalProcessor --> ImageExtractor
+    MultimodalProcessor --> VideoExtractor
+}
+
+ProcessingOrchestrator --> ContentUnderstandingClient
+ProcessingOrchestrator --> OpenAIClient
+ProcessingOrchestrator --> LargeDocumentProcessor
+ProcessingOrchestrator --> MultimodalProcessor
+ContentUnderstandingClient --> ExtractionResult
+ExtractionResult *-- ExtractedField
+
+@enduml

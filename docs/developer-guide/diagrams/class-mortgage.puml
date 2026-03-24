@@ -1,0 +1,134 @@
+@startuml class-mortgage
+!theme plain
+skinparam classAttributeIconSize 0
+skinparam classFontSize 12
+skinparam linetype ortho
+
+title Mortgage Underwriting Module\n(.NET Equivalent: Bounded Context / Feature Module)
+
+package "Document Classification (Strategy Pattern)" #F0F8FF {
+    class DocClassifier {
+        +classify(filename, content): DocumentType
+        +detect_type(text_sample): DocumentType
+    }
+
+    class MortgageRouter {
+        +route(doc_type): str
+        +get_analyzer(doc_type): str
+        +get_extractor(doc_type): BaseExtractor
+    }
+
+    enum DocumentType {
+        T4
+        PAY_STUB
+        EMPLOYMENT_LETTER
+        NOTICE_OF_ASSESSMENT
+        T1_GENERAL
+        APPRAISAL_REPORT
+        PURCHASE_SALE_AGREEMENT
+        PROPERTY_TAX_BILL
+        TITLE_SEARCH
+        BANK_STATEMENT
+        CREDIT_REPORT
+        RRSP_STATEMENT
+        GIFT_LETTER
+    }
+}
+
+package "Extractors (Handler Pattern)" #FFF8F0 {
+    class BorrowerExtractor {
+        +extract(raw_data): BorrowerInfo
+    }
+
+    class IncomeExtractor {
+        +extract(raw_data): IncomeInfo
+        +normalize_income(amount, period): Decimal
+    }
+
+    class PropertyExtractor {
+        +extract(raw_data): PropertyInfo
+    }
+
+    class LoanExtractor {
+        +extract(raw_data): LoanInfo
+    }
+
+    class CreditExtractor {
+        +extract(raw_data): CreditInfo
+    }
+}
+
+package "Processing Pipeline" #F0FFF0 {
+    class MortgageProcessor {
+        -classifier: DocClassifier
+        -router: MortgageRouter
+        -extractors: Dict[DocumentType, BaseExtractor]
+        --
+        +process_documents(files): MortgageApplication
+        +extract_fields(file, doc_type): Dict
+        +normalize_fields(raw_fields): Dict
+    }
+
+    class MortgageAggregator {
+        +aggregate(extracted_docs): ConsolidatedApplication
+        +resolve_conflicts(field_values): Any
+        +track_provenance(field, source): None
+    }
+
+    class ProvenanceTracker {
+        +record(field, value, source_doc, page): None
+        +get_provenance(field): List[FieldSource]
+    }
+}
+
+package "Calculations (Domain Service)" #FFFFF0 {
+    class MortgageCalculator {
+        +calculate_gds(income, housing_costs): Decimal
+        +calculate_tds(income, all_debts): Decimal
+        +calculate_ltv(loan, property_value): Decimal
+        +calculate_amortization_schedule(): List
+    }
+
+    class StressTest {
+        +apply_mqr(contract_rate): Decimal
+        +stress_test_gds(income, costs, mqr): Decimal
+        +stress_test_tds(income, debts, mqr): Decimal
+        +is_compliant(): bool
+    }
+
+    class MortgagePolicyEngine {
+        +evaluate(application): PolicyResult
+        +check_gds_limit(gds): Finding
+        +check_tds_limit(tds): Finding
+        +check_ltv_limit(ltv): Finding
+        +check_amortization(years): Finding
+    }
+
+    class "Constants (OSFI B-20)" as constants {
+        GDS_LIMIT = 39%
+        TDS_LIMIT = 44%
+        LTV_CONVENTIONAL = 80%
+        LTV_INSURED = 95%
+        MAX_AMORT_INSURED = 25 years
+        MAX_AMORT_UNINSURED = 30 years
+        MQR_FLOOR = 5.25%
+        MQR_BUFFER = 2.0%
+    }
+}
+
+MortgageProcessor --> DocClassifier
+MortgageProcessor --> MortgageRouter
+MortgageProcessor --> MortgageAggregator
+MortgageRouter --> BorrowerExtractor
+MortgageRouter --> IncomeExtractor
+MortgageRouter --> PropertyExtractor
+MortgageRouter --> LoanExtractor
+MortgageRouter --> CreditExtractor
+MortgageAggregator --> ProvenanceTracker
+MortgageCalculator --> constants
+StressTest --> constants
+MortgagePolicyEngine --> constants
+MortgagePolicyEngine --> MortgageCalculator
+MortgagePolicyEngine --> StressTest
+
+@enduml

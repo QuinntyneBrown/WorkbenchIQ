@@ -1,0 +1,93 @@
+@startuml component-architecture
+!theme plain
+skinparam componentStyle rectangle
+
+title WorkbenchIQ System Architecture\n(.NET / Angular Developer Reference)
+
+cloud "Azure Cloud Services" {
+    [Azure Content\nUnderstanding] as ACU
+    [Azure OpenAI\n(GPT-4)] as AOAI
+    [Azure Blob\nStorage] as ABS
+    database "PostgreSQL\n(pgvector)" as PG
+}
+
+package "Frontend - Next.js 14" #E8F5E9 {
+    [Landing Page] as LP
+    [Workbench View] as WV
+    [Admin Panel] as AP
+    [Chat Drawer] as CD
+    [Persona Context] as PC
+    [API Client] as AC
+
+    LP --> PC : reads persona
+    WV --> CD : opens
+    WV --> AC : API calls
+    AP --> AC : API calls
+    CD --> AC : chat API
+}
+
+package "API Proxy Layer" #FFF3E0 {
+    [Next.js API Routes] as PROXY
+    AC --> PROXY : /api/*
+}
+
+package "Backend - FastAPI" #E3F2FD {
+    [FastAPI Router] as FR
+
+    package "Core Services" {
+        [Processing Orchestrator] as PO
+        [OpenAI Client] as OC
+        [Content Understanding Client] as CUC
+        [Large Document Processor] as LDP
+    }
+
+    package "Domain Modules" {
+        [Claims Module] as CM
+        [Mortgage Module] as MM
+        [Multimodal Processor] as MMP
+        [Persona System] as PS
+    }
+
+    package "Data Access" {
+        [Storage Provider] as SP
+        [RAG Service] as RS
+        [Database Client] as DC
+        [Policy Engine] as PE
+    }
+
+    package "Prompt and Policy Mgmt" {
+        [Prompt Catalog] as PCat
+        [Glossary Service] as GS
+        [Underwriting Policies] as UP
+    }
+
+    PROXY --> FR
+
+    FR --> PO
+    FR --> CM
+    FR --> MM
+    FR --> RS
+    FR --> PS
+
+    PO --> OC
+    PO --> CUC
+    PO --> LDP
+    PO --> MMP
+
+    CM --> MMP
+    CM --> PE
+    MM --> PE
+
+    PO --> SP
+    RS --> DC
+    PE --> PCat
+    PE --> UP
+    PO --> GS
+
+    OC --> AOAI
+    CUC --> ACU
+    SP --> ABS
+    DC --> PG
+}
+
+@enduml

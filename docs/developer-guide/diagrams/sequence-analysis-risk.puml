@@ -1,0 +1,93 @@
+@startuml sequence-analysis-risk
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 200
+
+title LLM Analysis & Risk Assessment Flow\n(.NET: Service Layer → Azure OpenAI)
+
+actor "User" as user
+participant "Next.js Frontend" as fe
+participant "FastAPI Backend\n(ASP.NET Controller)" as api
+participant "LargeDocumentProcessor\n(Background Service)" as ldp
+participant "Azure OpenAI\n(GPT-4)" as aoai
+participant "RAG Service\n(Search Service)" as rag
+participant "PolicyEngine\n(Domain Service)" as pol
+participant "StorageProvider" as store
+
+== LLM Analysis (Prompt-based Sections) ==
+
+user -> fe : Click "Analyze" button\n(select sections)
+fe -> api : POST /api/applications/{id}/analyze\n{ sections: ["customer_profile", "medical_summary"] }
+api --> fe : 202 Accepted
+
+note over api : Background processing begins
+
+api -> store : load_metadata(app_id)
+store --> api : metadata + markdown + fields
+
+api -> api : detect_processing_mode(file_size)
+
+alt Standard Mode (< 1.5 MB)
+    api -> api : Use full document markdown
+else Large Document Mode (>= 1.5 MB)
+    api -> ldp : process(markdown, fields)
+    ldp -> ldp : split_into_batches(markdown)\n~20 pages per batch
+
+    loop For each batch (sequential)
+        ldp -> aoai : Summarize batch\n(200 token target)
+        aoai --> ldp : batch_summary
+        ldp -> ldp : Rate limit delay (2s)
+    end
+
+    ldp -> ldp : consolidate_summaries()
+    ldp --> api : condensed_context\n(~15K tokens)
+end
+
+loop For each requested section
+    api -> api : Load persona-specific prompt\n+ inject document context\n+ inject extracted fields\n+ inject glossary terms
+    api -> aoai : chat_completion(system_prompt,\nuser_context, temperature=0.0)
+    aoai --> api : structured_response (JSON)
+
+    alt Rate Limited (429)
+        api -> api : Retry with exponential backoff
+        api -> aoai : Fallback endpoint
+        aoai --> api : response
+    end
+
+    api -> api : Parse + store in llm_outputs
+end
+
+api -> store : save_metadata(app_id, updated)
+
+== Risk Assessment (Policy Evaluation) ==
+
+user -> fe : Click "Run Policy Check"
+fe -> api : POST /api/applications/{id}/risk-analysis
+
+api -> store : load_metadata(app_id)
+store --> api : metadata + extracted fields
+
+alt RAG Enabled (PostgreSQL)
+    api -> rag : search_policies(extracted_fields,\npersona)
+    rag -> rag : embed query → vector
+    rag -> rag : hybrid_search(semantic + keyword)
+    rag --> api : relevant_policy_chunks
+    api -> api : Build context from\nrelevant chunks
+else RAG Disabled (JSON fallback)
+    api -> pol : load_all_policies(persona)
+    pol --> api : full_policy_set
+    api -> api : Format all policies\ninto prompt context
+end
+
+api -> api : Build risk assessment prompt:\n- Application data\n- Extracted fields\n- Policy context\n- Assessment template
+
+api -> aoai : chat_completion(\nsystem: risk_assessor_role,\nuser: application + policies,\nmax_tokens: 4000)
+aoai --> api : { findings, applied_policies,\nrecommendation, rationale }
+
+api -> api : Parse findings by category\n(Cardiovascular, Metabolic, etc.)
+api -> store : save risk_analysis to metadata
+api --> fe : { risk_analysis, status: "completed" }
+
+fe --> user : Display:\n- Risk factors by severity\n- Applied policies with citations\n- Recommendation card\n  (Approve / Defer / Decline)
+
+@enduml

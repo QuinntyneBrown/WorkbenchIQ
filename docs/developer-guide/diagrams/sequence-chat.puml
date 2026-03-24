@@ -1,0 +1,83 @@
+@startuml sequence-chat
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 200
+
+title Ask IQ Chat Flow\n(.NET: SignalR Hub / Controller → AI Service)
+
+actor "User" as user
+participant "ChatDrawer\n(Angular Sidenav)" as chat
+participant "FastAPI Backend\n(ASP.NET Controller)" as api
+participant "RAG Service" as rag
+participant "PolicyEngine" as pol
+participant "GlossaryService" as glos
+participant "Azure OpenAI" as aoai
+participant "StorageProvider" as store
+
+== Chat Message ==
+
+user -> chat : Type question in Ask IQ\n"What are the risk factors\nfor this applicant's BMI?"
+
+chat -> api : POST /api/applications/{id}/chat\n{ message, conversation_id, persona }
+
+api -> store : load_metadata(app_id)
+store --> api : application context\n(fields, llm_outputs, risk_analysis)
+
+== Context Assembly ==
+
+alt RAG Enabled
+    api -> rag : search_policies(user_question, persona)
+    rag -> rag : Embed question
+    rag -> rag : Hybrid search\n(vector + keyword)
+    rag --> api : Top-K relevant policy chunks\nwith similarity scores
+else RAG Disabled
+    api -> pol : load_policies(persona)
+    pol --> api : Full policy set\n(fallback injection)
+end
+
+api -> glos : format_glossary_for_prompt(persona)
+glos --> api : Glossary terms\n(abbreviations + definitions)
+
+api -> api : Build system prompt:\n- Persona role definition\n- Application summary\n- Extracted fields\n- Policy/RAG context\n- Glossary terms\n- Response format instructions
+
+== LLM Conversation ==
+
+api -> api : Assemble messages:\n1. system: persona + context\n2. history: prior messages\n3. user: new question
+
+api -> aoai : chat_completion(\nmessages,\ntemperature=0.3,\nmax_tokens=1200)
+aoai --> api : response text
+
+== Response Processing ==
+
+api -> api : Detect response format:\n- Plain text → pass through\n- JSON detected → parse structure
+
+alt JSON Structure Detected
+    api -> api : Parse as one of:\n- risk_factors\n- policy_list\n- recommendation\n- comparison
+end
+
+api -> store : Save message to conversation\n{ user_msg, assistant_msg,\ntimestamp, conversation_id }
+
+api --> chat : { response, format_type,\nconversation_id }
+
+alt Plain Text Response
+    chat --> user : Render markdown text
+else risk_factors Format
+    chat --> user : Render severity-coded\nrisk factor cards
+else policy_list Format
+    chat --> user : Render policy cards\nwith citation links
+else recommendation Format
+    chat --> user : Render decision card\n(Approve/Defer/Decline)
+else comparison Format
+    chat --> user : Render side-by-side\ncomparison table
+end
+
+== Chat History Management ==
+
+user -> chat : View conversation list
+chat -> api : GET /api/applications/{id}/conversations
+api -> store : load_metadata(app_id)
+store --> api : conversations list
+api --> chat : [{ id, title, messages, created_at }]
+chat --> user : Show conversation list\nwith timestamps
+
+@enduml

@@ -1,0 +1,146 @@
+@startuml class-backend-core
+!theme plain
+skinparam classAttributeIconSize 0
+skinparam classFontSize 12
+skinparam packageFontSize 14
+skinparam linetype ortho
+
+title WorkbenchIQ Backend Core Classes\n(.NET Equivalent: Domain Models & Services)
+
+package "Configuration (appsettings.json equivalent)" #F0F8FF {
+    class Settings {
+        +content_understanding: ContentUnderstandingSettings
+        +openai: OpenAISettings
+        +database: DatabaseSettings
+        +rag: RAGSettings
+        +processing: ProcessingSettings
+        +storage_root: str
+        +prompts_root: str
+        --
+        +from_env(): Settings
+    }
+
+    class ContentUnderstandingSettings {
+        +endpoint: str
+        +api_key: Optional[str]
+        +analyzer_id: str
+        +api_version: str
+        +use_azure_ad: bool
+        +custom_analyzer_id: str
+    }
+
+    class OpenAISettings {
+        +endpoint: str
+        +api_key: str
+        +deployment_name: str
+        +chat_deployment_name: Optional[str]
+        +fallback_endpoint: Optional[str]
+        +fallback_deployment_name: Optional[str]
+    }
+
+    class DatabaseSettings {
+        +backend: str
+        +host: Optional[str]
+        +port: Optional[int]
+        +database: Optional[str]
+        +user: Optional[str]
+        +password: Optional[str]
+        +ssl_mode: Optional[str]
+    }
+
+    class RAGSettings {
+        +enabled: bool
+        +top_k: int
+        +similarity_threshold: float
+        +embedding_model: str
+        +embedding_dimensions: int
+    }
+
+    class ProcessingSettings {
+        +large_doc_threshold_kb: int
+        +chunk_size_chars: int
+        +max_sample_pages: int
+        +condensed_context_max_chars: int
+        +auto_detect_mode: bool
+    }
+}
+
+package "Persona System (Multi-Tenant Strategy)" #FFF8F0 {
+    enum PersonaType {
+        UNDERWRITING
+        LIFE_HEALTH_CLAIMS
+        AUTOMOTIVE_CLAIMS
+        MORTGAGE_UNDERWRITING
+        PROPERTY_CASUALTY_CLAIMS
+    }
+
+    class PersonaConfig {
+        +id: str
+        +name: str
+        +description: str
+        +icon: str
+        +color: str
+        +field_schema: Dict
+        +default_prompts: Dict
+        +custom_analyzer_id: str
+        +image_analyzer_id: Optional[str]
+        +video_analyzer_id: Optional[str]
+    }
+}
+
+package "Application Domain (.NET Entity equivalent)" #F0FFF0 {
+    class ApplicationMetadata {
+        +app_id: str
+        +persona: PersonaType
+        +applicant_name: str
+        +status: str
+        +files: List[FileInfo]
+        +extracted_fields: Dict
+        +confidence_summary: ConfidenceSummary
+        +llm_outputs: Dict
+        +risk_analysis: Dict
+        +conversations: List[Conversation]
+        +processing_status: Optional[str]
+        +processing_error: Optional[str]
+        +created_at: datetime
+        +updated_at: datetime
+    }
+
+    class ConfidenceSummary {
+        +high: int
+        +medium: int
+        +low: int
+        +total: int
+    }
+
+    class FileInfo {
+        +filename: str
+        +original_name: str
+        +size: int
+        +content_type: str
+        +upload_time: datetime
+    }
+
+    class UnderwritingPolicy {
+        +id: str
+        +category: str
+        +subcategory: str
+        +name: str
+        +description: str
+        +criteria: List[PolicyCriteria]
+        +modifying_factors: List[Dict]
+        +references: List[str]
+    }
+}
+
+Settings *-- ContentUnderstandingSettings
+Settings *-- OpenAISettings
+Settings *-- DatabaseSettings
+Settings *-- RAGSettings
+Settings *-- ProcessingSettings
+ApplicationMetadata *-- ConfidenceSummary
+ApplicationMetadata *-- FileInfo
+ApplicationMetadata --> PersonaType
+PersonaConfig --> PersonaType
+
+@enduml

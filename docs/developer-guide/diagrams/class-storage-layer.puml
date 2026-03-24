@@ -1,0 +1,150 @@
+@startuml class-storage-layer
+!theme plain
+skinparam classAttributeIconSize 0
+skinparam classFontSize 12
+skinparam linetype ortho
+
+title Storage & Database Layer\n(.NET Equivalent: Repository Pattern with IRepository<T>)
+
+package "Storage Providers (IRepository equivalent)" #F0F8FF {
+    interface StorageProvider <<Protocol>> {
+        +save_file(app_id, filename): str
+        +load_file(app_id, filename): Optional[bytes]
+        +get_file_url(app_id, filename): Optional[str]
+        +save_metadata(app_id, metadata): None
+        +load_metadata(app_id): Optional[Dict]
+        +delete_application(app_id): bool
+        +list_applications(): List[Dict]
+    }
+
+    class LocalStorageProvider {
+        -storage_root: str
+        --
+        +save_file(app_id, filename): str
+        +load_file(app_id, filename): Optional[bytes]
+        +get_file_url(app_id, filename): Optional[str]
+        +save_metadata(app_id, metadata): None
+        +load_metadata(app_id): Optional[Dict]
+        +delete_application(app_id): bool
+        +list_applications(): List[Dict]
+    }
+
+    class AzureBlobStorageProvider {
+        -account_name: str
+        -account_key: str
+        -container_name: str
+        -blob_service_client: BlobServiceClient
+        --
+        +save_file(app_id, filename): str
+        +load_file(app_id, filename): Optional[bytes]
+        +get_file_url(app_id, filename): Optional[str]
+        +save_metadata(app_id, metadata): None
+        +load_metadata(app_id): Optional[Dict]
+        +delete_application(app_id): bool
+        +list_applications(): List[Dict]
+    }
+
+    StorageProvider <|.. LocalStorageProvider
+    StorageProvider <|.. AzureBlobStorageProvider
+}
+
+package "Database Layer (EF Core DbContext equivalent)" #FFF8F0 {
+    class DatabaseClient {
+        -pool: asyncpg.Pool
+        --
+        +connect(): None
+        +fetch(query, *args): List[Record]
+        +fetchrow(query, *args): Optional[Record]
+        +execute(query, *args): str
+        +close(): None
+    }
+
+    class ConnectionPool {
+        -_pool: Optional[asyncpg.Pool]
+        -_settings: DatabaseSettings
+        --
+        +init_pool(settings): None
+        +get_pool(): asyncpg.Pool
+        +close_pool(): None
+    }
+
+    DatabaseClient --> ConnectionPool : uses
+}
+
+package "RAG System (Search Service equivalent)" #F0FFF0 {
+    class RAGService {
+        -search_service: PolicySearchService
+        -context_builder: RAGContextBuilder
+        -embeddings: EmbeddingClient
+        --
+        +search_policies(query, persona): List[PolicyChunk]
+        +build_context(query, persona): str
+        +get_fallback_context(persona): str
+    }
+
+    class PolicySearchService {
+        -repository: RAGRepository
+        -embeddings: EmbeddingClient
+        --
+        +hybrid_search(query, top_k): List[SearchResult]
+        +semantic_search(embedding, top_k): List[SearchResult]
+        +keyword_search(query, top_k): List[SearchResult]
+    }
+
+    class RAGRepository {
+        -pool: ConnectionPool
+        --
+        +save_chunk(chunk): None
+        +search_by_embedding(embedding, top_k): List[Record]
+        +search_by_keyword(query, top_k): List[Record]
+        +delete_by_persona(persona): None
+        +get_stats(): Dict
+    }
+
+    class EmbeddingClient {
+        -settings: OpenAISettings
+        --
+        +embed(text): List[float]
+        +embed_batch(texts): List[List[float]]
+    }
+
+    class PolicyIndexer {
+        -chunker: TextChunker
+        -embeddings: EmbeddingClient
+        -repository: RAGRepository
+        --
+        +index_policies(persona): IndexResult
+        +reindex_all(): None
+    }
+
+    class TextChunker {
+        -chunk_size: int
+        -overlap: int
+        --
+        +chunk(text): List[TextChunk]
+    }
+
+    RAGService --> PolicySearchService
+    RAGService --> EmbeddingClient
+    PolicySearchService --> RAGRepository
+    PolicySearchService --> EmbeddingClient
+    PolicyIndexer --> TextChunker
+    PolicyIndexer --> EmbeddingClient
+    PolicyIndexer --> RAGRepository
+    RAGRepository --> ConnectionPool
+}
+
+note right of StorageProvider
+  .NET equivalent:
+  public interface IStorageProvider
+  {
+      Task<string> SaveFileAsync(...);
+      Task<byte[]?> LoadFileAsync(...);
+  }
+
+  Registered via DI:
+  services.AddScoped<IStorageProvider,
+      LocalStorageProvider>();
+end note
+
+@enduml

@@ -1,0 +1,73 @@
+@startuml sequence-claims
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 200
+
+title Automotive Claims Multimodal Processing Flow
+
+actor "Claims\nAdjuster" as user
+participant "Claims UI\n(Angular Feature)" as fe
+participant "Claims API\n(ClaimsController)" as api
+participant "Multimodal\nProcessor" as mmp
+participant "Document\nExtractor" as doc
+participant "Image\nExtractor" as img
+participant "Video\nExtractor" as vid
+participant "Azure Content\nUnderstanding" as acu
+participant "Claims Policy\nEngine" as cpe
+participant "RAG Search" as rag
+participant "Azure OpenAI" as aoai
+
+== Claim Submission ==
+
+user -> fe : Upload claim files:\n- Accident report (PDF)\n- Damage photos (JPG)\n- Dashcam video (MP4)
+
+fe -> api : POST /api/claims\n(multipart: files + metadata)
+api -> api : Create claim record
+
+== Parallel Multimodal Processing ==
+
+api -> mmp : process_files(uploaded_files)
+mmp -> mmp : Route each file by media type
+
+par Parallel Processing
+    mmp -> doc : extract(accident_report.pdf)
+    doc -> acu : Analyze document\n(field schema)
+    acu --> doc : { claimant_name, date,\nlocation, description,\nthird_parties }
+    doc --> mmp : DocumentFields
+
+    mmp -> img : extract(damage_photo_1.jpg)
+    img -> acu : Analyze image\n(damage analyzer)
+    acu --> img : { damage_areas: [\n  { region: "front_bumper",\n    severity: "major",\n    bbox: [...] }\n]}
+    img --> mmp : List[DamageArea]
+
+    mmp -> img : extract(damage_photo_2.jpg)
+    img -> acu : Analyze image
+    acu --> img : { damage_areas }
+    img --> mmp : List[DamageArea]
+
+    mmp -> vid : extract(dashcam.mp4)
+    vid -> acu : Analyze video\n(video analyzer)
+    acu --> vid : { keyframes: [\n  { timestamp: "00:03",\n    description: "impact" }\n]}
+    vid --> mmp : VideoData
+end
+
+mmp -> mmp : aggregate_results()
+mmp --> api : List[ProcessingResult]
+
+== Policy Evaluation ==
+
+api -> rag : search_policies(\n"front bumper major damage",\npersona: automotive_claims)
+rag --> api : Relevant policy chunks
+
+api -> cpe : evaluate(claim_data,\npolicy_context)
+cpe -> aoai : Assess claim against:\n- Damage assessment guidelines\n- Liability determination\n- Fraud red flags\n- Coverage verification\n- Payout benchmarks
+aoai --> cpe : { assessment, liability,\nfraud_score, payout_estimate }
+cpe --> api : ClaimAssessment
+
+api --> fe : { claim_id, status,\nassessment, evidence }
+
+== Results Display ==
+
+fe --> user : Claims Dashboard:\n- Damage areas overlay on photos\n- Evidence gallery\n- Eligibility panel\n- Assessment summary\n- Payout recommendation
+
+@enduml
