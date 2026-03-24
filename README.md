@@ -9,7 +9,7 @@
 [![Azure AI](https://img.shields.io/badge/Azure-AI%20Services-0078D4.svg)](https://azure.microsoft.com/en-us/products/ai-services/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**WorkbenchIQ** is a Microsoft accelerator that provides a modern workbench for **underwriters** and **claims processors**, combining **Azure AI Content Understanding** and **Azure AI Foundry** to streamline document-heavy insurance workflows.
+**WorkbenchIQ** is a Microsoft accelerator that provides a modern workbench for **underwriters** and **claims processors**, combining **Azure AI Content Understanding** and **Azure AI Foundry** to streamline document-heavy insurance workflows. It includes a **Customer 360** unified data layer that aggregates customer interactions across all product lines into a single cross-persona view.
 
 [Features](#features) | [Quick Start](#quick-start) | [Architecture](#architecture) | [Use Cases](#business-use-cases) | [Configuration](#configuration)
 
@@ -111,11 +111,17 @@ WorkbenchIQ accelerates the daily work of underwriters and claims processors:
 - **Solution**: Extract ICD-10 codes, treatment details, and provider information; verify coverage eligibility automatically
 - **Outcome**: Accelerate claims adjudication with intelligent document triage
 
-### Mortgage Underwriting *(Coming Soon)*
+### Mortgage Underwriting
 
-- **Challenge**: Loan officers review income verification, property appraisals, and credit documentation
-- **Solution**: Extract borrower information, income sources, debt-to-income ratios, and property valuations
-- **Outcome**: Streamline loan approval with consistent document analysis
+- **Challenge**: Loan officers review income verification, property appraisals, and credit documentation across dozens of documents
+- **Solution**: Extract borrower information, income sources, debt-to-income ratios, and property valuations; auto-calculate GDS/TDS/LTV ratios against OSFI B-20 guidelines
+- **Outcome**: Streamline loan approval with consistent document analysis and regulatory compliance checks
+
+### Customer 360 — Unified Data Layer
+
+- **Challenge**: Underwriters and claims assessors make decisions in silos, missing cross-product risk patterns (e.g., a health claim correlating with a life insurance referral)
+- **Solution**: Aggregate customer interactions across all personas into a unified timeline with risk correlation insights and cross-persona summary cards
+- **Outcome**: Holistic customer view enables better-informed decisions and reveals risk patterns invisible in single-product views
 
 ---
 
@@ -123,12 +129,14 @@ WorkbenchIQ accelerates the daily work of underwriters and claims processors:
 
 ### Core Capabilities
 
-- **Multi-Persona Workbench** - Switch between underwriting and claims processing workflows
-- **Intelligent Document Extraction** - Azure AI Content Understanding with `prebuilt-documentSearch`
+- **Multi-Persona Workbench** - Switch between underwriting, claims, and mortgage workflows with persona-specific views
+- **Customer 360 View** - Cross-persona customer journey with timeline, risk correlations, and persona summary cards
+- **Intelligent Document Extraction** - Azure AI Content Understanding with custom and prebuilt analyzers
 - **AI-Powered Analysis** - LLM prompts for comprehensive document summarization and risk assessment
 - **Confidence Scoring** - Field-level confidence indicators for extracted data
-- **Custom Prompt Engineering** - Editable prompt catalog tailored to underwriting and claims workflows
+- **Custom Prompt Engineering** - Editable prompt catalog tailored to each persona's workflow
 - **Progress Tracking** - Real-time status updates for long-running operations
+- **Deep-Link Navigation** - URL-based routing (`/?app={id}&persona={id}`) for cross-view navigation
 
 ### Underwriting Policy Integration
 
@@ -154,15 +162,45 @@ WorkbenchIQ accelerates the daily work of underwriters and claims processors:
 - **Auto-Indexing** - Policies are automatically chunked and indexed when created or updated
 - **Admin Controls** - Manual reindex button and index statistics in the Admin panel
 
+### Customer 360 — Unified Data Layer
+
+- **Cross-Persona Customer View** - Aggregates applications across underwriting, claims, and mortgage into a unified profile
+- **Customer Journey Timeline** - Chronological view of all interactions, color-coded by persona (indigo/cyan/red/emerald)
+- **Risk Correlation Engine** - Highlights cross-product risk patterns (e.g., cardiac health claim correlating with life insurance referral)
+- **Persona Summary Cards** - Collapsible per-persona cards with key metrics (GDS/TDS for mortgage, risk class for underwriting, claim amounts for claims)
+- **Journey Metrics Dashboard** - KPIs showing total products, active claims, risk score, and correlation severity
+- **Workbench Deep-Links** - Click any timeline event to open the application in its persona-specific workbench
+- **Azure Blob Storage** - Customer profiles stored alongside application data with provider abstraction
+- **Seed Data Script** - `python scripts/seed_customer360.py` generates 3 customer profiles with 9 rich applications across all personas
+
+### Mortgage Underwriting Workbench
+
+- **3-Column Layout** - Evidence panel, Data/Calculations/Policy tabs, and Risk assessment
+- **OSFI B-20 Compliance** - Automated GDS/TDS/LTV ratio calculation with stress testing at MQR
+- **Borrower Analysis** - Income aggregation from T4s, pay stubs, employment letters; B1/B2 dual-income support
+- **Property Deep Dive** - AI-powered property analysis with comparable sales data via Bing Grounding
+- **Policy Checks Panel** - Pass/warning/fail findings with evidence citations and calculated values
+- **Decision Footer** - Approve/Conditional/Decline with condition management
+
+### Automotive Claims Workbench
+
+- **Multimodal Evidence** - Process documents, images, and videos with specialized analyzers
+- **Damage Assessment** - Visual damage analysis with severity ratings and repair cost estimates
+- **Liability Determination** - Fault analysis with police report and video evidence correlation
+- **Fraud Detection** - Red flag analysis with SIU investigation triggers
+- **Payout Recommendation** - Settlement analysis with deductible calculations
+
 ### Technical Features
 
 - **Modern Stack** - Next.js 14 + Tailwind CSS frontend, FastAPI backend
 - **REST API** - Full API with interactive Swagger documentation
 - **Azure AD Authentication** - Secure service-to-service authentication
-- **Extensible Personas** - Easy to add new industry verticals
+- **Storage Abstraction** - Pluggable storage providers (local filesystem + Azure Blob Storage)
+- **Extensible Personas** - Easy to add new industry verticals with persona-specific analyzers
 - **Retry Logic** - Resilient API calls with exponential backoff
 - **PostgreSQL + pgvector** - Optional vector database for RAG-powered policy search
 - **Hybrid Search** - Semantic (HNSW index) + keyword (GIN/pg_trgm) search capabilities
+- **Large Document Processing** - Auto-detection and batch processing for documents exceeding standard limits
 
 ---
 
@@ -255,9 +293,11 @@ WorkbenchIQ accelerates the daily work of underwriters and claims processors:
 
 | Persona | Status | Description |
 |---------|--------|-------------|
-| **Underwriting** | Active | Life insurance underwriting - process applications and medical documents |
-| **Claims** | Demo | Insurance claims processing - review medical claims and documentation |
-| **Mortgage** | Coming Soon | Mortgage underwriting - loan applications and property documents |
+| **Life & Health Underwriting** | ✅ Active | Life insurance underwriting — process applications, medical records, lab results, and risk assessment |
+| **Life & Health Claims** | ✅ Active | Health insurance claims — eligibility verification, medical necessity review, benefits adjudication |
+| **Automotive Claims** | ✅ Active | Multimodal vehicle claims — damage assessment, liability, fraud detection with image/video/document support |
+| **Mortgage Underwriting** | ✅ Active | Canadian residential mortgage — OSFI B-20 compliance, GDS/TDS/LTV calculations, stress testing |
+| **Customer 360** | ✅ Active | Cross-persona unified view — customer journey timeline, risk correlations, persona summary cards |
 
 ---
 
@@ -445,16 +485,35 @@ workbenchiq/
 ├── api_server.py                 # FastAPI backend server
 ├── app/
 │   ├── config.py                 # Configuration management
+│   ├── customer360.py            # Customer 360 unified data layer (blob-aware)
 │   ├── personas.py               # Multi-persona definitions & field schemas
-│   ├── storage.py                # File and metadata handling
+│   ├── storage.py                # File and metadata handling (provider abstraction)
+│   ├── storage_providers/        # Pluggable storage backends
+│   │   ├── base.py               # StorageProvider protocol & settings
+│   │   ├── local.py              # Local filesystem provider
+│   │   └── azure_blob.py         # Azure Blob Storage provider
 │   ├── prompts.py                # Prompt templates & catalog
 │   ├── openai_client.py          # Azure OpenAI integration
 │   ├── content_understanding_client.py  # Azure CU integration
 │   ├── processing.py             # Orchestration logic
 │   ├── underwriting_policies.py  # Policy loader and injector
 │   ├── utils.py                  # Helper utilities
+│   ├── claims/                   # Claims processing module
+│   │   ├── api.py                # Claims API router
+│   │   ├── engine.py             # Claims policy engine
+│   │   ├── policies.py           # Claims policy loader
+│   │   └── search.py             # Claims policy search (RAG)
+│   ├── mortgage/                 # Mortgage underwriting module
+│   │   ├── processor.py          # Document processing & extraction
+│   │   ├── calculator.py         # GDS/TDS/LTV ratio calculations
+│   │   ├── policy_engine.py      # OSFI B-20 compliance engine
+│   │   ├── risk_analysis.py      # Mortgage risk factor scoring
+│   │   ├── stress_test.py        # Stress test at MQR rates
+│   │   ├── aggregator.py         # Multi-document data aggregation
+│   │   ├── property_deep_dive.py # AI property analysis (Bing Grounding)
+│   │   └── extractors/           # Field extractors (borrower, income, property, loan, credit)
+│   ├── database/                 # PostgreSQL connection management
 │   └── rag/                      # RAG module (optional PostgreSQL)
-│       ├── __init__.py           # RAG service exports
 │       ├── chunker.py            # Policy text chunking
 │       ├── embedder.py           # Azure OpenAI embedding client
 │       ├── repository.py         # PostgreSQL CRUD operations
@@ -462,26 +521,52 @@ workbenchiq/
 │       ├── service.py            # Unified RAG service interface
 │       └── indexer.py            # Policy indexing pipeline
 ├── scripts/                      # Utility scripts
+│   ├── seed_customer360.py       # Seed Customer 360 data (local + Azure Blob)
+│   ├── seed_data/                # Rich seed data modules
+│   │   ├── underwriting.py       # 3 underwriting apps with full LLM outputs
+│   │   ├── claims.py             # 2 auto claims + 1 health claim
+│   │   └── mortgage.py           # 3 mortgage apps with extracted fields
 │   ├── setup_postgresql_rag.py   # Azure PostgreSQL provisioning
 │   └── index_policies.py         # CLI for policy indexing
 ├── prompts/                      # Git-tracked prompts & policies
 │   ├── prompts.json              # LLM prompts for document analysis
-│   ├── risk-analysis-prompts.json # Risk analysis prompt templates
-│   ├── life-health-underwriting-policies.json # Underwriting policy manual
-│   └── policies.json             # Claims/health plan policies
+│   ├── risk-analysis-prompts.json
+│   ├── life-health-underwriting-policies.json
+│   ├── life-health-claims-policies.json
+│   ├── automotive-claims-policies.json
+│   └── mortgage-underwriting-policies.json
 ├── frontend/                     # Next.js 14 frontend
 │   ├── src/
 │   │   ├── app/                  # Next.js pages (App Router)
+│   │   │   ├── page.tsx          # Home — landing + workbench (deep-link support)
+│   │   │   ├── customers/        # Customer 360 pages
+│   │   │   │   ├── page.tsx      # Customer list
+│   │   │   │   └── [id]/page.tsx # Customer detail (360 view)
+│   │   │   ├── admin/            # Admin panel
+│   │   │   └── login/            # Authentication
 │   │   ├── components/           # React components
+│   │   │   ├── customer360/      # Customer 360 components
+│   │   │   │   ├── CustomerListView.tsx
+│   │   │   │   ├── CustomerProfileHeader.tsx
+│   │   │   │   ├── CustomerTimeline.tsx
+│   │   │   │   ├── PersonaSummaryCard.tsx
+│   │   │   │   ├── RiskCorrelationBanner.tsx
+│   │   │   │   └── CustomerJourneyMetrics.tsx
+│   │   │   ├── mortgage/         # Mortgage workbench components
+│   │   │   │   ├── MortgageWorkbench.tsx
+│   │   │   │   ├── DataWorksheet.tsx
+│   │   │   │   ├── CalculationsPanel.tsx
+│   │   │   │   ├── PolicyChecksPanel.tsx
+│   │   │   │   ├── RiskPanel.tsx
+│   │   │   │   └── DecisionFooter.tsx
 │   │   │   ├── claims/           # Claims-specific components
 │   │   │   ├── chat/             # Chat components
-│   │   │   │   ├── ChatCards.tsx     # Rich response cards (risk factors, recommendations)
-│   │   │   │   └── ChatHistoryPanel.tsx
-│   │   │   ├── ChatDrawer.tsx    # Slide-out chat interface
-│   │   │   ├── PatientHeader.tsx
-│   │   │   ├── LabResultsPanel.tsx
-│   │   │   └── ...
-│   │   └── lib/                  # Utilities, API client, PersonaContext
+│   │   │   └── ...               # Shared components
+│   │   └── lib/                  # Utilities, API client, types, PersonaContext
+│   │       ├── customer360-types.ts  # Customer 360 type definitions
+│   │       ├── customer360-api.ts    # Customer 360 API client
+│   │       ├── personas.ts           # Persona definitions & UI config
+│   │       └── ...
 │   └── package.json
 ├── tests/                        # Test suite and fixtures
 ├── data/                         # Application data storage (gitignored)
@@ -496,34 +581,41 @@ workbenchiq/
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| **Applications** | | |
 | `GET` | `/api/personas` | List all available personas |
 | `GET` | `/api/personas/{id}` | Get specific persona configuration |
-| `GET` | `/api/applications` | List all applications |
+| `GET` | `/api/applications` | List all applications (filterable by `?persona=`) |
 | `GET` | `/api/applications/{id}` | Get application details |
 | `POST` | `/api/applications` | Create new application with file upload |
 | `POST` | `/api/applications/{id}/extract` | Run Content Understanding extraction |
 | `POST` | `/api/applications/{id}/analyze` | Run GPT analysis |
-| `GET` | `/api/prompts` | Get prompt catalog |
-| `PUT` | `/api/prompts/{section}/{subsection}` | Update a prompt |
-| `POST` | `/api/prompts/{section}/{subsection}` | Create a new prompt |
-| `DELETE` | `/api/prompts/{section}/{subsection}` | Delete/reset a prompt |
-| `GET` | `/api/policies` | Get all underwriting policies |
-| `GET` | `/api/policies/{id}` | Get specific policy by ID |
-| `POST` | `/api/policies` | Create a new underwriting policy |
-| `PUT` | `/api/policies/{id}` | Update an underwriting policy |
-| `DELETE` | `/api/policies/{id}` | Delete an underwriting policy |
-| `GET` | `/api/analyzer/status` | Get custom analyzer status |
-| `POST` | `/api/analyzer/create` | Create custom analyzer |
-| `GET` | `/api/analyzer/schema?persona={id}` | Get field extraction schema |
 | `POST` | `/api/applications/{id}/risk-analysis` | Run full policy evaluation |
+| **Customer 360** | | |
+| `GET` | `/api/customers` | List all customer profiles |
+| `GET` | `/api/customers/{id}` | Get Customer 360 view (profile, journey, risk correlations) |
+| **Mortgage** | | |
+| `GET` | `/api/mortgage/applications` | List mortgage applications |
+| `GET` | `/api/mortgage/applications/{id}` | Get mortgage app with computed ratios & findings |
+| `GET` | `/api/mortgage/applications/{id}/property-deep-dive` | Get property deep dive analysis |
+| `POST` | `/api/mortgage/applications/{id}/property-deep-dive` | Run property deep dive |
+| **Claims** | | |
+| `POST` | `/api/claims/submit` | Submit a claim with files |
+| `GET` | `/api/claims/{id}/assessment` | Get claim assessment |
+| `POST` | `/api/claims/policies/search` | Search claims policies |
+| **Chat & RAG** | | |
 | `POST` | `/api/applications/{id}/chat` | Send chat message with context |
-| `GET` | `/api/applications/{id}/conversations` | List chat sessions for an application |
-| `GET` | `/api/applications/{id}/conversations/{chat_id}` | Get specific chat session |
-| `DELETE` | `/api/applications/{id}/conversations/{chat_id}` | Delete a chat session |
+| `GET` | `/api/applications/{id}/conversations` | List chat sessions |
 | `GET` | `/api/conversations` | List all conversations across applications |
-| `POST` | `/api/rag/index` | Index all underwriting policies for RAG |
+| `POST` | `/api/rag/index` | Index all policies for RAG |
 | `GET` | `/api/rag/stats` | Get RAG index statistics |
 | `POST` | `/api/rag/query` | Query policies using semantic search |
+| **Admin** | | |
+| `GET` | `/api/prompts` | Get prompt catalog |
+| `PUT` | `/api/prompts/{section}/{subsection}` | Update a prompt |
+| `GET` | `/api/policies` | Get all underwriting policies |
+| `POST` | `/api/policies` | Create a new underwriting policy |
+| `GET` | `/api/analyzer/status` | Get custom analyzer status |
+| `POST` | `/api/analyzer/create` | Create custom analyzer |
 
 ---
 
@@ -689,6 +781,32 @@ MY_PERSONA_FIELD_SCHEMA = {
 2. Add prompts for analysis sections
 3. Register in `PERSONA_CONFIGS` dictionary
 4. Create frontend components as needed
+
+### Seeding Customer 360 Data
+
+The seed script creates 3 customer profiles with 9 rich applications across all personas. It supports both local filesystem and Azure Blob Storage.
+
+```bash
+# Local development (default)
+python scripts/seed_customer360.py
+
+# Azure Blob Storage (set env vars or use .env)
+STORAGE_BACKEND=azure_blob \
+AZURE_STORAGE_ACCOUNT_NAME=workbanchdata \
+AZURE_STORAGE_ACCOUNT_KEY=<key> \
+AZURE_STORAGE_CONTAINER_NAME=workbenchiq-data \
+python scripts/seed_customer360.py
+```
+
+**Seed Customer Profiles:**
+
+| Customer | Risk Tier | Products | Narrative |
+|----------|-----------|----------|-----------|
+| **Sarah Chen** | 🟢 Low | Life insurance (approved), mortgage (approved), auto claim (settled) | Loyal multi-product customer since 2019, consistent low-risk |
+| **Marcus Williams** | 🟡 Medium | Life insurance (referred), health claim (approved), mortgage (conditional) | Cardiac health concerns correlate across products |
+| **Priya Patel** | 🔴 High | Auto claim (investigating), life insurance (pending), mortgage (declined) | New customer, fraud flags + financial overextension |
+
+Each application includes full workbench-quality data: `llm_outputs` with complete section/subsection structure, `extracted_fields` with confidence scores, and `risk_analysis` results. The seed data is modular — see `scripts/seed_data/` for per-persona data modules.
 
 ---
 
