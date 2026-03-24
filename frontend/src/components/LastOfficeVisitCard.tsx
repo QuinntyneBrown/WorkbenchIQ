@@ -9,9 +9,11 @@ interface LastOfficeVisitCardProps {
   lov: LastOfficeVisitData | null;
   lastLabs: LastLabsData | null;
   onPageClick?: (page: number) => void;
+  onPageHover?: (page: number, rect: DOMRect) => void;
+  onPageLeave?: () => void;
 }
 
-export default function LastOfficeVisitCard({ lov, lastLabs, onPageClick }: LastOfficeVisitCardProps) {
+export default function LastOfficeVisitCard({ lov, lastLabs, onPageClick, onPageHover, onPageLeave }: LastOfficeVisitCardProps) {
   if (!lov && !lastLabs) {
     return (
       <div className="bg-white rounded-lg border border-slate-200 p-4">
@@ -36,7 +38,7 @@ export default function LastOfficeVisitCard({ lov, lastLabs, onPageClick }: Last
             <Calendar className="w-3.5 h-3.5 text-indigo-500" />
             <span className="text-xs font-semibold text-indigo-600 uppercase">Last Office Visit</span>
             {lov.date && <span className="text-xs font-medium text-slate-600">{lov.date}</span>}
-            <PageRefBadges pages={lov.page_references} onClick={onPageClick} />
+            <PageRefBadges pages={lov.page_references} onClick={onPageClick} onHover={onPageHover} onLeave={onPageLeave} />
           </div>
           <p className="text-sm text-slate-700 leading-snug ml-5">{lov.summary}</p>
           {lov.follow_up_plans && lov.follow_up_plans.length > 0 && (
@@ -62,7 +64,7 @@ export default function LastOfficeVisitCard({ lov, lastLabs, onPageClick }: Last
             <FlaskConical className="w-3.5 h-3.5 text-emerald-500" />
             <span className="text-xs font-semibold text-emerald-600 uppercase">Last Labs</span>
             {lastLabs.date && <span className="text-xs font-medium text-slate-600">{lastLabs.date}</span>}
-            <PageRefBadges pages={lastLabs.page_references} onClick={onPageClick} />
+            <PageRefBadges pages={lastLabs.page_references} onClick={onPageClick} onHover={onPageHover} onLeave={onPageLeave} />
           </div>
           <p className="text-sm text-slate-700 leading-snug ml-5">{lastLabs.summary}</p>
         </div>

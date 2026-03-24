@@ -8,6 +8,8 @@ import type { AbnormalLabEntry } from '@/lib/types';
 interface AbnormalLabsCardProps {
   labs: AbnormalLabEntry[];
   onPageClick?: (page: number) => void;
+  onPageHover?: (page: number, rect: DOMRect) => void;
+  onPageLeave?: () => void;
 }
 
 function interpretationColor(interpretation: string | undefined) {
@@ -18,7 +20,7 @@ function interpretationColor(interpretation: string | undefined) {
   return 'text-slate-600';
 }
 
-export default function AbnormalLabsCard({ labs, onPageClick }: AbnormalLabsCardProps) {
+export default function AbnormalLabsCard({ labs, onPageClick, onPageHover, onPageLeave }: AbnormalLabsCardProps) {
   if (!labs || labs.length === 0) {
     return (
       <div className="bg-white rounded-lg border border-slate-200 p-4">
@@ -60,7 +62,7 @@ export default function AbnormalLabsCard({ labs, onPageClick }: AbnormalLabsCard
                   {lab.interpretation}
                 </td>
                 <td className="py-1.5 px-2">
-                  <PageRefBadges pages={lab.page_references} onClick={onPageClick} />
+                  <PageRefBadges pages={lab.page_references} onClick={onPageClick} onHover={onPageHover} onLeave={onPageLeave} />
                 </td>
               </tr>
             ))}

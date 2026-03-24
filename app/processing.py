@@ -395,12 +395,84 @@ def run_content_understanding_for_files(
     return app_md
 
 
+def _try_repair_truncated_json(text: str) -> Dict[str, Any]:
+    """Attempt to repair truncated JSON from max_tokens cut-off.
+
+    Strategy:
+    1. Close any open string literals.
+    2. Trim trailing incomplete values/keys.
+    3. Close open brackets/braces to produce valid JSON.
+    4. Return parsed result or error dict.
+    """
+    import re
+
+    s = text.rstrip()
+
+    # If inside an open string, close it
+    in_string = False
+    last_quote = -1
+    escape = False
+    for i, ch in enumerate(s):
+        if escape:
+            escape = False
+            continue
+        if ch == '\\':
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            if in_string:
+                last_quote = i
+
+    if in_string:
+        s += '"'
+
+    # Trim any trailing comma / colon / partial key outside a string
+    s = re.sub(r'[,:]\s*$', '', s)
+
+    # Close unclosed brackets / braces
+    stack: list[str] = []
+    in_str = False
+    esc = False
+    for ch in s:
+        if esc:
+            esc = False
+            continue
+        if ch == '\\':
+            esc = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch in ('{', '['):
+            stack.append(ch)
+        elif ch == '}' and stack and stack[-1] == '{':
+            stack.pop()
+        elif ch == ']' and stack and stack[-1] == '[':
+            stack.pop()
+
+    closers = {'[': ']', '{': '}'}
+    while stack:
+        s += closers.get(stack.pop(), '')
+
+    try:
+        parsed = json.loads(s)
+        parsed["_truncated"] = True
+        logger.info("Truncated JSON repaired successfully (%d chars)", len(s))
+        return parsed
+    except json.JSONDecodeError as e:
+        return {"_raw": text, "_error": f"JSON repair failed: {e}"}
+
+
 # Per-subsection max_tokens overrides for prompts that produce large JSON.
 # Subsections not listed here use the chat_completion default (1200).
 _SUBSECTION_MAX_TOKENS: Dict[str, int] = {
-    "body_system_review": 8000,  # Multi-system structured JSON for 100+ page docs
-    "pending_investigations": 2000,
-    "abnormal_labs": 2000,
+    "body_system_review": 16000,  # Multi-system structured JSON for 100+ page docs
+    "pending_investigations": 4000,  # Can be lengthy for large APS docs
+    "abnormal_labs": 4000,  # Many abnormal labs in complex cases
+    "last_office_visit": 2000,
 }
 
 
@@ -445,10 +517,48 @@ def _run_single_prompt(
     result = chat_completion(settings.openai, messages, **kwargs)
     raw_content = result["content"]
 
+    # Strip markdown code fences that LLMs sometimes wrap around JSON.
+    # Handle cases where the LLM adds commentary after the closing ```.
+    content_to_parse = raw_content.strip()
+    if content_to_parse.startswith("```"):
+        first_newline = content_to_parse.find("\n")
+        if first_newline != -1:
+            content_to_parse = content_to_parse[first_newline + 1:]
+        # Find the LAST closing ``` (may not be at the very end if LLM added text after)
+        closing_idx = content_to_parse.rfind("```")
+        if closing_idx != -1:
+            content_to_parse = content_to_parse[:closing_idx].strip()
+
     try:
-        parsed = json.loads(raw_content)
-    except Exception:
-        parsed = {"_raw": raw_content, "_error": "Failed to parse JSON response."}
+        parsed = json.loads(content_to_parse)
+    except json.JSONDecodeError:
+        # Strip single-line JS-style comments (// ...) that LLMs sometimes add
+        import re
+        stripped = re.sub(r'//[^\n]*', '', content_to_parse)
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            # Check if this looks like truncated JSON (max_tokens hit)
+            usage = result.get("usage", {})
+            completion_tokens = usage.get("completion_tokens", 0)
+            is_likely_truncated = (
+                max_tokens
+                and completion_tokens >= max_tokens - 5
+            )
+            if is_likely_truncated:
+                logger.warning(
+                    "Prompt %s.%s: response likely truncated at %d tokens "
+                    "(max_tokens=%s). Attempting JSON repair.",
+                    section, subsection, completion_tokens, max_tokens,
+                )
+                parsed = _try_repair_truncated_json(content_to_parse)
+                if "_error" in parsed:
+                    parsed["_error"] = (
+                        f"JSON truncated at {completion_tokens} tokens "
+                        f"(max_tokens={max_tokens}). {parsed['_error']}"
+                    )
+            else:
+                parsed = {"_raw": raw_content, "_error": "Failed to parse JSON response."}
 
     return {
         "section": section,
@@ -588,13 +698,28 @@ def run_underwriting_prompts(
     # Other personas (claims, mortgage, etc.) use standard processing
     large_doc_eligible_personas = ["underwriting"]
     
-    # Detect or use override processing mode
+    # Detect or use override processing mode.
+    # For incremental runs (e.g. deep-dive), honour the mode that was
+    # recorded during the original full analysis so that large-document
+    # apps keep using batch_summaries even when the markdown alone falls
+    # below the auto-detection threshold.
     if persona not in large_doc_eligible_personas:
         # Non-underwriting personas always use standard mode
         mode = 'standard'
         logger.info("Persona '%s' not eligible for large doc mode, using standard", persona)
     elif processing_mode_override and processing_mode_override != 'auto':
         mode = processing_mode_override
+    elif (
+        sections_to_run
+        and app_md.processing_mode
+        and app_md.processing_mode != 'auto'
+    ):
+        # Incremental re-analysis — keep the original processing mode
+        mode = app_md.processing_mode
+        logger.info(
+            "Incremental run — honouring stored processing_mode '%s'",
+            mode,
+        )
     elif settings.processing.auto_detect_mode:
         mode = detect_processing_mode(
             app_md.document_markdown,
@@ -612,20 +737,40 @@ def run_underwriting_prompts(
     # Build appropriate context for prompts
     batch_summaries_context: str | None = None  # Rich context for deep dive prompts
     if mode == "large_document":
-        logger.info("Using large document mode - building condensed context...")
-        document_context, batch_summaries = build_condensed_context(
-            settings,
-            app_md.document_markdown,
-            cu_result,
-        )
+        # For incremental runs (e.g. deep-dive endpoint), reuse existing
+        # batch summaries and condensed context to avoid expensive re-
+        # summarization that can fail via rate limits.
+        reused_existing = False
+        if (
+            sections_to_run
+            and app_md.batch_summaries
+            and app_md.condensed_context
+        ):
+            logger.info(
+                "Reusing existing batch summaries (%d batches) and condensed "
+                "context for incremental re-analysis",
+                len(app_md.batch_summaries),
+            )
+            document_context = app_md.condensed_context
+            batch_summaries = app_md.batch_summaries
+            reused_existing = True
+        else:
+            logger.info("Using large document mode - building condensed context...")
+            document_context, batch_summaries = build_condensed_context(
+                settings,
+                app_md.document_markdown,
+                cu_result,
+            )
         app_md.processing_mode = "large_document"
         app_md.condensed_context = document_context
         app_md.document_stats = get_document_stats(app_md.document_markdown)
-        app_md.batch_summaries = batch_summaries  # Store batch summaries for UI
+        if not reused_existing:
+            app_md.batch_summaries = batch_summaries  # Store batch summaries for UI
         logger.info(
-            "Condensed context ready: %d chars (~%d tokens), %d batch summaries",
+            "Condensed context ready: %d chars (~%d tokens), %d batch summaries%s",
             len(document_context), len(document_context) // 4,
-            len(batch_summaries) if batch_summaries else 0
+            len(batch_summaries) if batch_summaries else 0,
+            " (reused)" if reused_existing else "",
         )
         # Build rich batch-summaries context for deep dive prompts.
         # Batch summaries preserve per-page detail and (Page N) references
@@ -651,7 +796,11 @@ def run_underwriting_prompts(
         document_context = app_md.document_markdown
         app_md.processing_mode = "standard"
         app_md.document_stats = get_document_stats(app_md.document_markdown)
-        app_md.batch_summaries = None  # No batch summaries for standard mode
+        # Only clear batch_summaries on a full (non-incremental) run.
+        # Incremental runs (deep dive) should preserve existing summaries
+        # so they remain visible in the Source Review UI.
+        if not sections_to_run:
+            app_md.batch_summaries = None
 
     # Load persona-specific prompts from prompts_root
     prompts = prompts_override or load_prompts(settings.app.prompts_root, persona)
@@ -859,9 +1008,23 @@ def run_underwriting_prompts(
         # Perform per-section (and per-subsection) merge to avoid dropping existing subsections
         for section, section_results in results.items():
             if isinstance(section_results, dict) and isinstance(existing.get(section), dict):
-                # Merge subsections within this section
+                # Merge subsections within this section, but never let error
+                # entries overwrite previously-good data.
                 merged_section = existing[section].copy()
-                merged_section.update(section_results)
+                for key, value in section_results.items():
+                    is_error = (
+                        isinstance(value, dict)
+                        and isinstance(value.get("parsed"), dict)
+                        and "_error" in value["parsed"]
+                    )
+                    if is_error and key in merged_section:
+                        # Existing data present — keep it, log warning
+                        logger.warning(
+                            "Skipping error result for %s.%s — preserving existing data",
+                            section, key,
+                        )
+                        continue
+                    merged_section[key] = value
                 existing[section] = merged_section
             else:
                 # If not both dicts, replace entire section
@@ -973,9 +1136,10 @@ def run_risk_analysis(
         first_newline = content_to_parse.find("\n")
         if first_newline != -1:
             content_to_parse = content_to_parse[first_newline + 1:]
-        # Remove trailing ``` if present
-        if content_to_parse.endswith("```"):
-            content_to_parse = content_to_parse[:-3].strip()
+        # Remove trailing ``` (may not be at very end if LLM added text after)
+        closing_idx = content_to_parse.rfind("```")
+        if closing_idx != -1:
+            content_to_parse = content_to_parse[:closing_idx].strip()
     
     try:
         parsed = json.loads(content_to_parse)

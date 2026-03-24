@@ -9,6 +9,8 @@ interface PendingInvestigationsCardProps {
   investigations: PendingInvestigation[];
   summary?: string;
   onPageClick?: (page: number) => void;
+  onPageHover?: (page: number, rect: DOMRect) => void;
+  onPageLeave?: () => void;
 }
 
 const urgencyConfig: Record<Urgency, { className: string; icon: React.ReactNode; label: string }> = {
@@ -41,6 +43,8 @@ export default function PendingInvestigationsCard({
   investigations,
   summary,
   onPageClick,
+  onPageHover,
+  onPageLeave,
 }: PendingInvestigationsCardProps) {
   if (!investigations || investigations.length === 0) {
     return (
@@ -85,7 +89,7 @@ export default function PendingInvestigationsCard({
                 </div>
                 <p className="text-sm text-slate-700 leading-snug">
                   {inv.description}
-                  <PageRefBadges pages={inv.page_references} onClick={onPageClick} />
+                  <PageRefBadges pages={inv.page_references} onClick={onPageClick} onHover={onPageHover} onLeave={onPageLeave} />
                 </p>
               </div>
             </div>

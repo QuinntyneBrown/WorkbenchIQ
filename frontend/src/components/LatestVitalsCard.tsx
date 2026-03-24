@@ -8,6 +8,8 @@ import type { LatestVitalsData } from '@/lib/types';
 interface LatestVitalsCardProps {
   vitals: LatestVitalsData | null;
   onPageClick?: (page: number) => void;
+  onPageHover?: (page: number, rect: DOMRect) => void;
+  onPageLeave?: () => void;
 }
 
 interface VitalItemProps {
@@ -34,7 +36,7 @@ function VitalItem({ icon, label, value, unit, color }: VitalItemProps) {
   );
 }
 
-export default function LatestVitalsCard({ vitals, onPageClick }: LatestVitalsCardProps) {
+export default function LatestVitalsCard({ vitals, onPageClick, onPageHover, onPageLeave }: LatestVitalsCardProps) {
   if (!vitals) {
     return (
       <div className="bg-white rounded-lg border border-slate-200 p-4">
@@ -58,7 +60,7 @@ export default function LatestVitalsCard({ vitals, onPageClick }: LatestVitalsCa
         </h3>
         <div className="flex items-center gap-2">
           {vitals.date && <span className="text-xs text-slate-500">{vitals.date}</span>}
-          <PageRefBadges pages={vitals.page_references} onClick={onPageClick} />
+          <PageRefBadges pages={vitals.page_references} onClick={onPageClick} onHover={onPageHover} onLeave={onPageLeave} />
         </div>
       </div>
 

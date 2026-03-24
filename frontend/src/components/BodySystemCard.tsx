@@ -8,6 +8,8 @@ import type { BodySystemEntry, DiagnosisEntry, Severity } from '@/lib/types';
 interface BodySystemCardProps {
   system: BodySystemEntry;
   onPageClick?: (page: number) => void;
+  onPageHover?: (page: number, rect: DOMRect) => void;
+  onPageLeave?: () => void;
   isHighlighted?: boolean;
 }
 
@@ -46,11 +48,15 @@ function DiagnosisDetail({
   isExpanded,
   onToggle,
   onPageClick,
+  onPageHover,
+  onPageLeave,
 }: {
   dx: DiagnosisEntry;
   isExpanded: boolean;
   onToggle: () => void;
   onPageClick?: (page: number) => void;
+  onPageHover?: (page: number, rect: DOMRect) => void;
+  onPageLeave?: () => void;
 }) {
   const statusColors: Record<string, string> = {
     active: 'text-red-600',
@@ -78,7 +84,7 @@ function DiagnosisDetail({
         {dx.date_diagnosed && (
           <span className="text-[10px] text-slate-400">dx {dx.date_diagnosed}</span>
         )}
-        <PageRefBadges pages={dx.page_references} onClick={onPageClick} />
+        <PageRefBadges pages={dx.page_references} onClick={onPageClick} onHover={onPageHover} onLeave={onPageLeave} />
       </button>
 
       {/* Expanded details */}
@@ -96,7 +102,7 @@ function DiagnosisDetail({
                   <div key={i} className="flex items-start gap-2 text-xs text-slate-600">
                     <span className="text-slate-400 flex-shrink-0">{tx.date}</span>
                     <span className="flex-1">{tx.description}</span>
-                    <PageRefBadges pages={tx.page_references} onClick={onPageClick} />
+                    <PageRefBadges pages={tx.page_references} onClick={onPageClick} onHover={onPageHover} onLeave={onPageLeave} />
                   </div>
                 ))}
               </div>
@@ -116,7 +122,7 @@ function DiagnosisDetail({
                     <span className="text-slate-400 flex-shrink-0">{c.date}</span>
                     <span className="font-medium text-slate-700">{c.specialist}</span>
                     <span className="flex-1">— {c.summary}</span>
-                    <PageRefBadges pages={c.page_references} onClick={onPageClick} />
+                    <PageRefBadges pages={c.page_references} onClick={onPageClick} onHover={onPageHover} onLeave={onPageLeave} />
                   </div>
                 ))}
               </div>
@@ -136,7 +142,7 @@ function DiagnosisDetail({
                     <span className="text-slate-400 flex-shrink-0">{img.date}</span>
                     <span className="font-medium text-slate-700">{img.type}</span>
                     <span className="flex-1">— {img.result}</span>
-                    <PageRefBadges pages={img.page_references} onClick={onPageClick} />
+                    <PageRefBadges pages={img.page_references} onClick={onPageClick} onHover={onPageHover} onLeave={onPageLeave} />
                   </div>
                 ))}
               </div>
@@ -148,7 +154,7 @@ function DiagnosisDetail({
   );
 }
 
-export default function BodySystemCard({ system, onPageClick, isHighlighted }: BodySystemCardProps) {
+export default function BodySystemCard({ system, onPageClick, onPageHover, onPageLeave, isHighlighted }: BodySystemCardProps) {
   const [expandedDx, setExpandedDx] = useState<Set<number>>(new Set([0]));
 
   const toggleDx = (index: number) => {
@@ -194,6 +200,8 @@ export default function BodySystemCard({ system, onPageClick, isHighlighted }: B
             isExpanded={expandedDx.has(i)}
             onToggle={() => toggleDx(i)}
             onPageClick={onPageClick}
+            onPageHover={onPageHover}
+            onPageLeave={onPageLeave}
           />
         ))}
       </div>
