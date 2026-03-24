@@ -35,48 +35,20 @@ import type {
 const API_BASE_URL = '';
 
 /**
- * Get the direct backend API base URL for media requests.
- * In the browser, derives the API origin from the current hostname
- * (e.g., workbenchiq.azurewebsites.net → workbenchiq-api.azurewebsites.net).
- * Falls back to NEXT_PUBLIC_API_URL or localhost for SSR/local dev.
+ * Get the media base URL.
+ * Returns empty string so all media requests use relative paths and route
+ * through the Next.js API proxy, which injects the X-API-Key header
+ * server-side. The proxy preserves binary responses (arrayBuffer) and
+ * forwards Range/Content-Range headers for video streaming.
  */
 function getMediaBaseUrl(): string {
-  if (typeof window !== 'undefined') {
-    // Use NEXT_PUBLIC_API_URL if it was injected at build time,
-    // but only if it's a publicly reachable URL (not localhost/internal)
-    const envUrl = process.env.NEXT_PUBLIC_API_URL;
-    if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-      return envUrl;
-    }
-    // On Azure: derive API URL from frontend URL (add -api suffix)
-    const host = window.location.hostname;
-    if (host.endsWith('.azurewebsites.net')) {
-      const appName = host.replace('.azurewebsites.net', '');
-      return `https://${appName}-api.azurewebsites.net`;
-    }
-    // Azure Container Apps: derive API URL (add -api suffix before region label)
-    // e.g., workbenchiq.bluesky-12345.eastus.azurecontainerapps.io
-    //     → workbenchiq-api.bluesky-12345.eastus.azurecontainerapps.io
-    if (host.endsWith('.azurecontainerapps.io')) {
-      const parts = host.split('.');
-      if (parts.length >= 2) {
-        parts[0] = parts[0] + '-api';
-        return `https://${parts.join('.')}`;
-      }
-    }
-    // Local development: connect directly to the Python backend
-    // to avoid the Next.js proxy which corrupts binary responses (PDFs, images)
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://localhost:8000';
-    }
-  }
   return API_BASE_URL;
 }
 
 /**
- * Get the full direct URL for a media file (image, video, PDF).
- * Bypasses the Next.js proxy so browsers receive proper Content-Length
- * and Accept-Ranges headers needed for video/image rendering.
+ * Get the full URL for a media file (image, video, PDF).
+ * Routes through the Next.js proxy which handles authentication and
+ * binary content (Content-Length, Accept-Ranges, Content-Range).
  */
 export function getMediaUrl(url: string): string {
   if (!url) return '';

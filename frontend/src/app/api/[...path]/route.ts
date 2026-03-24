@@ -64,6 +64,12 @@ async function proxyRequest(
       (headers as Record<string, string>)['X-API-Key'] = apiKey;
     }
 
+    // Forward Range header for video/audio streaming (HTTP 206 Partial Content)
+    const rangeHeader = request.headers.get('range');
+    if (rangeHeader) {
+      (headers as Record<string, string>)['Range'] = rangeHeader;
+    }
+
     const fetchOptions: RequestInit = {
       method: method || request.method,
       headers,
@@ -114,6 +120,8 @@ async function proxyRequest(
         if (contentDisposition) responseHeaders['Content-Disposition'] = contentDisposition;
         const acceptRanges = response.headers.get('accept-ranges');
         if (acceptRanges) responseHeaders['Accept-Ranges'] = acceptRanges;
+        const contentRange = response.headers.get('content-range');
+        if (contentRange) responseHeaders['Content-Range'] = contentRange;
         return new NextResponse(buffer, {
           status: response.status,
           headers: responseHeaders,
