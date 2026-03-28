@@ -1,0 +1,83 @@
+@startuml sequence-diagram
+scale max 1024 width
+
+title Configuration Loading Flow -- Startup Sequence
+
+skinparam sequenceArrowThickness 1.5
+skinparam sequenceParticipantBorderColor #333333
+
+' ───────────────────────────────────────────────────────
+'  Participants
+' ───────────────────────────────────────────────────────
+participant "Program.cs\n(Host Builder)" as Host
+participant "ConfigurationBuilder" as CfgBuilder
+participant "appsettings.json" as AppJson <<file>>
+participant "Environment\nVariables" as EnvVars
+participant "Azure Key Vault /\nApp Configuration" as AzureKV
+participant "IServiceCollection\n(DI Container)" as DI
+participant "IValidateOptions<T>" as Validator
+participant "Angular\nAPP_INITIALIZER" as NgInit
+participant "ConfigService" as CfgSvc
+participant "GET /api/config/client" as ApiEndpoint
+
+' ───────────────────────────────────────────────────────
+'  .NET Backend Startup
+' ───────────────────────────────────────────────────────
+== .NET 8 Backend Startup ==
+
+Host -> CfgBuilder : CreateDefaultBuilder()
+activate CfgBuilder
+
+CfgBuilder -> AppJson : AddJsonFile("appsettings.json")
+CfgBuilder -> AppJson : AddJsonFile("appsettings.{env}.json")
+CfgBuilder -> EnvVars : AddEnvironmentVariables()
+CfgBuilder -> AzureKV : AddAzureAppConfiguration()\nAddAzureKeyVault()
+
+CfgBuilder --> Host : IConfiguration
+deactivate CfgBuilder
+
+Host -> DI : Configure<DatabaseOptions>("Database")
+Host -> DI : Configure<RagOptions>("Rag")
+Host -> DI : Configure<ContentUnderstandingOptions>("ContentUnderstanding")
+Host -> DI : Configure<OpenAIOptions>("OpenAI")
+Host -> DI : Configure<AppOptions>("App")
+Host -> DI : Configure<ProcessingOptions>("Processing")
+Host -> DI : Configure<AutomotiveClaimsOptions>("AutomotiveClaims")
+Host -> DI : Configure<MortgageUnderwritingOptions>("MortgageUnderwriting")
+
+Host -> DI : ValidateOnStart() for all options
+
+Host -> Validator : Validate(options)
+activate Validator
+alt Validation passes
+    Validator --> Host : Success
+else Validation fails
+    Validator --> Host : OptionsValidationException\n(startup aborted)
+end
+deactivate Validator
+
+Host -> Host : Build() and Run()
+
+' ───────────────────────────────────────────────────────
+'  Angular Frontend Bootstrap
+' ───────────────────────────────────────────────────────
+== Angular 17+ Frontend Bootstrap ==
+
+NgInit -> CfgSvc : initialize()
+activate CfgSvc
+
+CfgSvc -> CfgSvc : Read environment.ts\n(build-time values)
+
+CfgSvc -> ApiEndpoint : GET /api/config/client
+activate ApiEndpoint
+ApiEndpoint --> CfgSvc : IClientConfig JSON\n{ apiBaseUrl, featureFlags }
+deactivate ApiEndpoint
+
+CfgSvc -> CfgSvc : Merge build-time +\nruntime config
+
+CfgSvc --> NgInit : Promise resolved
+deactivate CfgSvc
+
+NgInit -> NgInit : Application ready
+
+@enduml

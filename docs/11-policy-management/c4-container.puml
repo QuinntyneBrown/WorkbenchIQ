@@ -1,0 +1,31 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for Policy Management
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Container Diagram (Policy Management)
+
+Person(user, "User", "Underwriter, claims adjuster, or policy administrator.")
+
+System_Ext(llm, "LLM Service", "Azure OpenAI. Receives policy context in prompts.")
+
+System_Boundary(sys, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Policy list view, policy editor form, evaluation results display.")
+  Container(api, "Backend API", "ASP.NET Core 8, C#", "REST endpoints for policy CRUD, evaluation, and LLM prompt formatting.")
+  Container(engine, "Policy Engine", "C# Library", "Evaluates case data against policy criteria; generates findings and recommendations.")
+  ContainerDb(policyStore, "Policy JSON Store", "File System", "Per-persona JSON files containing policy definitions, criteria, and plan benefits.")
+  Container(cache, "In-Memory Cache", "IMemoryCache", "Caches deserialized policy sets per persona with sliding expiration.")
+}
+
+Rel(user, spa, "Uses", "HTTPS")
+Rel(spa, api, "REST calls", "JSON over HTTPS")
+Rel(api, engine, "Delegates evaluation")
+Rel(api, policyStore, "Reads / writes policies")
+Rel(api, cache, "Caches policy sets")
+Rel(api, llm, "Sends formatted policy prompts", "HTTPS")
+
+@enduml

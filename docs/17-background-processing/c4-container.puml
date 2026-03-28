@@ -1,0 +1,35 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for Background Processing
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Container Diagram (Background Processing)
+
+Person(user, "User", "Triggers document processing and monitors progress.")
+
+System_Boundary(sys, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Single-page application with processing controls, status indicators, and polling logic.")
+  Container(api, "Backend API", "ASP.NET Core 8, C#", "Hosts REST endpoints. ProcessingController enqueues jobs and returns status.")
+  Container(worker, "Background Worker", "ASP.NET Core BackgroundService", "Hosted service that dequeues processing jobs from a Channel<T> queue and executes extraction and analysis sequentially.")
+  ContainerDb(storage, "Application Storage", "File System / Azure Blob", "Stores application metadata, document content, extraction results, and LLM outputs.")
+  ContainerDb(config, "Configuration", "appsettings.json / Env Vars", "Stores queue capacity, processing thresholds, and worker settings.")
+}
+
+System_Ext(cu, "Azure Content Understanding", "Document extraction service.")
+System_Ext(llm, "Azure OpenAI Service", "LLM for analysis prompts.")
+
+Rel(user, spa, "Uses", "HTTPS")
+Rel(spa, api, "REST calls", "JSON over HTTPS\nPOST /process, GET /applications/{id}")
+Rel(api, worker, "Enqueues jobs", "In-process Channel<T>")
+Rel(worker, storage, "Reads/writes application data")
+Rel(worker, cu, "Sends documents", "HTTPS / REST")
+Rel(worker, llm, "Sends prompts", "HTTPS / REST")
+Rel(api, storage, "Reads application status")
+Rel(api, config, "Reads settings")
+Rel(worker, config, "Reads settings")
+
+@enduml

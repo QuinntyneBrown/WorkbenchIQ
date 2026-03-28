@@ -1,0 +1,31 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for Ask IQ Chat
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Container Diagram (Ask IQ Chat)
+
+Person(user, "User", "Asks contextual questions about applications via the Ask IQ chat panel.")
+
+System_Boundary(sys, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Chat drawer component, message rendering, structured response cards, and streaming display.")
+  Container(api, "Backend API", "ASP.NET Core 8, C#", "ChatController, ChatService, ChatContextBuilder. Assembles context, calls LLM, parses structured responses.")
+  Container(rag, "RAG Engine", "ASP.NET Core 8, C#", "Embeds queries, performs hybrid vector + keyword search over policy chunks.")
+  ContainerDb(store, "Storage Provider", "Local filesystem / Azure Blob", "Persists application metadata, conversations, policy documents, and glossary files.")
+}
+
+System_Ext(aoai, "Azure OpenAI Service", "Chat completions (GPT-4.1-mini) and text embeddings.")
+
+Rel(user, spa, "Uses", "HTTPS")
+Rel(spa, api, "REST / SSE", "JSON over HTTPS\nPOST chat messages\nGET conversations")
+Rel(api, rag, "Policy search", "In-process call")
+Rel(api, store, "Load app metadata,\nglossary, policies,\nsave conversations")
+Rel(rag, store, "Read policy chunks\nand embeddings")
+Rel(api, aoai, "Chat completions", "HTTPS / REST")
+Rel(rag, aoai, "Generate embeddings", "HTTPS / REST")
+
+@enduml

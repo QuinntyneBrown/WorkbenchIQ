@@ -1,0 +1,27 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for Document Upload & Extraction
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Container Diagram (Document Upload & Extraction)
+
+Person(user, "User", "Uploads documents and reviews extracted content.")
+
+System_Boundary(sys, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+", "File upload, document preview,\nstatus polling, confidence display.")
+  Container(api, "Backend API", "ASP.NET Core 8", "Application CRUD, file storage,\nextraction orchestration.")
+  ContainerDb(storage, "Storage Provider", "Blob / Local FS", "Files, metadata, CU results.")
+}
+
+System_Ext(azureCU, "Azure Content Understanding", "Document analysis, field extraction.")
+
+Rel(user, spa, "Uses", "HTTPS")
+Rel(spa, api, "Uploads files, polls status, fetches results", "multipart/form-data,\nJSON over HTTPS")
+Rel(api, storage, "Reads and writes files\nand metadata")
+Rel(api, azureCU, "Sends document bytes,\npolls operation status", "REST / HTTPS\n+ Azure AD or API key")
+
+@enduml

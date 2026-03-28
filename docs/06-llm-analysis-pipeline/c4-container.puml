@@ -1,0 +1,29 @@
+@startuml c4-container
+scale max 1024 width
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title WorkbenchIQ -- C4 Container Diagram (LLM Analysis Pipeline)
+
+Person(underwriter, "Underwriter / Claims Analyst", "Reviews documents and triggers analysis")
+
+System_Boundary(workbenchiq, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Single-page application.\nTriggers analysis, displays\nresults by section/subsection,\nstreams progress via SSE.")
+
+  Container(api, ".NET Web API", ".NET 8, ASP.NET Core", "REST API hosting analysis\npipeline. Orchestrates prompt\nexecution, manages OpenAI\ncalls with fallback/retry,\naggregates results.")
+
+  ContainerDb(storage, "Application Storage", "Azure Blob / Local FS", "Persists ApplicationMetadata,\nprompt templates (JSON),\nLLM analysis results,\nand extracted documents.")
+}
+
+System_Ext(azure_openai, "Azure OpenAI Service", "Primary, fallback, and mini\nchat completion deployments")
+System_Ext(azure_cu, "Azure Content Understanding", "Document OCR and\nMarkdown extraction")
+System_Ext(azure_ad, "Microsoft Entra ID", "OAuth 2.0 token provider")
+
+Rel(underwriter, spa, "Uses", "HTTPS")
+Rel(spa, api, "REST calls + SSE\nfor progress streaming", "HTTPS / JSON")
+Rel(api, storage, "Reads/writes metadata,\nprompts, and results")
+Rel(api, azure_openai, "Chat completion requests\nwith retry and fallback", "HTTPS / REST")
+Rel(api, azure_cu, "Document extraction", "HTTPS / REST")
+Rel(api, azure_ad, "Acquires bearer tokens", "OAuth 2.0")
+
+@enduml

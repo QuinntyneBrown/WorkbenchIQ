@@ -1,5 +1,9 @@
 {
   "devDependencies": {
     "baseline-browser-mapping": "^2.10.10"
+  },
+  "dependencies": {
+    "plantuml": "^0.0.2",
+    "plantuml-pipe": "^1.6.0"
   }
 }

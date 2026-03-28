@@ -1,0 +1,93 @@
+@startuml sequence-diagram
+!theme plain
+scale max 1024 width
+
+title Persona System -- Sequence Diagrams (.NET 8 / Angular 17+)
+
+' ──────────────────────────────────────────────
+'  Actors & participants
+' ──────────────────────────────────────────────
+actor       "Underwriter"               as user
+participant "PersonaSelectorComponent\n(Angular)"  as selector
+participant "PersonaStore\n(Signal State)"         as store
+participant "PersonaService\n(Angular)"            as ngSvc
+participant "PersonaController\n(.NET API)"        as ctrl
+participant "IPersonaService\n(.NET)"              as svc
+database    "appsettings.json\n(IOptions)"         as cfg
+
+== App Initialisation ==
+
+user -> selector : open application
+selector -> store : constructor / inject
+store -> ngSvc : getAll()
+ngSvc -> ctrl : GET /api/personas
+ctrl -> svc : GetAllAsync()
+svc -> cfg : read PersonaSettings
+cfg --> svc : List<PersonaConfiguration>
+svc --> ctrl : enabled personas
+ctrl --> ngSvc : PersonaSummary[]
+ngSvc --> store : personas signal updated
+store -> store : restoreSelection()\nfrom localStorage
+store --> selector : activePersona signal
+
+== Persona Selection ==
+
+user -> selector : select "Automotive Claims"
+selector -> store : selectPersona("AutomotiveClaims")
+store -> store : persistSelection()\nto localStorage
+store --> selector : activePersona signal updated
+note right of store
+  All dependent components
+  (upload, analysis, chat, policy)
+  react via computed signals.
+end note
+
+== Persona-Driven Document Processing ==
+
+participant "DocumentUploadComponent\n(Angular)"  as upload
+participant "AnalysisController\n(.NET API)"       as analysisCtrl
+participant "IDocumentProcessingService"           as docSvc
+participant "Azure Content\nUnderstanding"         as acu
+participant "ILlmAnalysisService"                  as llm
+
+user -> upload : upload document
+upload -> store : read activePersona()
+store --> upload : { id: "AutomotiveClaims" }
+
+upload -> analysisCtrl : POST /api/analysis\n{ personaId, files }
+analysisCtrl -> svc : GetByIdAsync("AutomotiveClaims")
+svc --> analysisCtrl : PersonaConfiguration
+
+analysisCtrl -> svc : GetFieldSchemaAsync(\n  "AutomotiveClaims", "document")
+svc --> analysisCtrl : FieldSchema (40+ fields)
+
+analysisCtrl -> svc : GetAnalyzerIdAsync(\n  "AutomotiveClaims", "document")
+svc --> analysisCtrl : "autoClaimsDocAnalyzer"
+
+analysisCtrl -> docSvc : ProcessAsync(files, schema, analyzerId)
+docSvc -> acu : Analyze(analyzerId, schema)
+acu --> docSvc : extracted fields
+
+analysisCtrl -> svc : GetPromptsAsync("AutomotiveClaims")
+svc --> analysisCtrl : PromptTemplate dictionary
+
+analysisCtrl -> llm : RunPromptsAsync(\n  extractedFields, prompts)
+llm --> analysisCtrl : analysis results
+
+analysisCtrl --> upload : AnalysisResultDto
+
+== Multimodal Processing (Image) ==
+
+user -> upload : upload vehicle photo
+upload -> analysisCtrl : POST /api/analysis\n{ personaId, files, mediaType: "image" }
+analysisCtrl -> svc : GetAnalyzerIdAsync(\n  "AutomotiveClaims", "image")
+svc --> analysisCtrl : "autoClaimsImageAnalyzer"
+analysisCtrl -> svc : GetFieldSchemaAsync(\n  "AutomotiveClaims", "image")
+svc --> analysisCtrl : image-specific FieldSchema
+
+analysisCtrl -> docSvc : ProcessAsync(\n  files, imageSchema, imageAnalyzerId)
+docSvc -> acu : Analyze(imageAnalyzerId, imageSchema)
+acu --> docSvc : damage assessment fields
+docSvc --> analysisCtrl : results
+
+@enduml

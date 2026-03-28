@@ -1,0 +1,24 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for Glossary Management
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- System Context (Glossary Management)
+
+Person(user, "WorkbenchIQ User", "An operator who manages domain-specific glossaries and uses the chat assistant.")
+
+System(workbenchiq, "WorkbenchIQ", "Web application that maintains persona-specific glossaries and injects domain terminology into LLM chat context.")
+
+System_Ext(browser, "Web Browser", "Renders the Angular SPA for glossary editing and term search.")
+
+System_Ext(llm, "LLM Provider", "Large language model that receives glossary context as part of the system prompt.")
+
+Rel(user, browser, "Manages glossaries via")
+Rel(browser, workbenchiq, "HTTPS requests", "REST / JSON")
+Rel(workbenchiq, llm, "Sends system prompt with glossary context", "HTTPS / API")
+
+@enduml

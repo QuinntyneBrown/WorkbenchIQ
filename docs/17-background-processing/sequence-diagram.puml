@@ -1,0 +1,98 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Background Processing sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+
+title Background Processing -- Sequence Diagram
+
+actor User
+participant "Angular\nProcessingService" as NgProc
+participant "Angular\nProcessingStatusComponent" as StatusComp
+participant "ASP.NET Core\nProcessingController" as Ctrl
+participant "BackgroundTaskQueue\n(Channel<T>)" as Queue
+participant "BackgroundProcessing\nHostedService" as Host
+participant "BackgroundProcessing\nService" as Svc
+participant "IApplicationRepository" as Repo
+participant "IExtractionService\n(Content Understanding)" as Extract
+participant "IAnalysisService\n(LLM Prompts)" as Analyze
+
+== Trigger Full Processing ==
+
+User -> NgProc : startProcessing(appId, mode)
+NgProc -> Ctrl : POST /api/applications/{appId}/process\n?processingMode=auto
+Ctrl -> Repo : LoadAsync(appId)
+Repo --> Ctrl : Application (status: Idle)
+
+alt Already processing
+  Ctrl --> NgProc : 409 Conflict
+  NgProc --> StatusComp : Show "already processing" error
+else Idle -- proceed
+  Ctrl -> Repo : Update status = Extracting
+  Ctrl -> Queue : EnqueueAsync(ProcessingJob)
+  Queue --> Ctrl : enqueued
+  Ctrl --> NgProc : 202 Accepted\n{ processingStatus: "extracting" }
+  NgProc --> StatusComp : Show "Extracting..." spinner
+end
+
+== Background Job Execution ==
+
+Host -> Queue : DequeueAsync(stoppingToken)
+Queue --> Host : ProcessingJob
+
+Host -> Svc : ExecuteJobAsync(job, token)
+
+note over Svc : Phase 1: Extraction
+Svc -> Repo : Update status = Extracting
+Svc -> Extract : ExtractAsync(appId)
+Extract --> Svc : extraction result (markdown, fields)
+Svc -> Repo : Save extraction data
+
+note over Svc : Phase 2: Analysis
+Svc -> Repo : Update status = Analyzing
+Svc -> Analyze : AnalyzeAsync(appId, sections, mode)
+Analyze --> Svc : analysis result (LLM outputs)
+Svc -> Repo : Save analysis data
+
+Svc -> Repo : Update status = Idle, clear error
+Svc --> Host : ProcessingResult { Success: true }
+
+== Frontend Polling ==
+
+NgProc -> NgProc : pollStatus(appId, 3000ms)
+loop Every 3 seconds while status != null && status != error
+  NgProc -> Ctrl : GET /api/applications/{appId}
+  Ctrl -> Repo : LoadAsync(appId)
+  Repo --> Ctrl : Application
+  Ctrl --> NgProc : ApplicationDto { processingStatus }
+  NgProc --> StatusComp : Update status display
+end
+note over NgProc : Polling completes when\nstatus is null (done) or error
+
+NgProc --> StatusComp : Show completion state
+StatusComp --> User : "Analysis complete" or error
+
+== Error Handling ==
+
+note over Svc : If extraction or analysis throws
+Svc -> Repo : Update status = Error\nSet processingError = message
+Svc --> Host : ProcessingResult { Success: false }
+
+... Frontend polling picks up error status ...
+
+NgProc --> StatusComp : Show error with Reset button
+
+== Reset Stuck Status ==
+
+User -> StatusComp : Click "Reset"
+StatusComp -> NgProc : resetStatus(appId)
+NgProc -> Ctrl : POST /api/applications/{appId}/reset-status
+Ctrl -> Svc : ResetStatusAsync(appId)
+Svc -> Repo : Update status = Idle, clear error
+Svc --> Ctrl : done
+Ctrl --> NgProc : 200 OK
+NgProc --> StatusComp : Status cleared
+
+@enduml

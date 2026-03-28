@@ -1,0 +1,76 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Confidence Scoring sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+
+title Confidence Scoring -- Sequence Diagram
+
+actor User
+participant "Angular\nExtractedFieldsComponent" as FieldsUI
+participant "Angular\nConfidenceService" as NgSvc
+participant "ASP.NET Core\nConfidenceController" as Ctrl
+participant "ASP.NET Core\nConfidenceAnalyzer" as Analyzer
+participant "Azure AI\nContent Understanding" as CU
+participant "Angular\nConfidenceBadgeComponent" as Badge
+
+== Document Upload & Analysis ==
+
+User -> FieldsUI : Upload document
+FieldsUI -> NgSvc : analyzeDocument(file, analyzerId?)
+NgSvc -> Ctrl : POST /api/confidence/analyze\n(multipart: file + analyzerId)
+Ctrl -> Ctrl : Open file stream from IFormFile
+Ctrl -> Analyzer : AnalyzeDocumentWithSummaryAsync(stream, analyzerId, ct)
+
+Analyzer -> CU : Submit document for analysis\n(custom analyzer with confidence)
+CU --> Analyzer : Analysis result with\nper-field confidence scores (0-1)
+
+== Field Extraction & Mapping ==
+
+loop For each field in CU response
+  Analyzer -> Analyzer : Map to ExtractedField record\n(Name, Value, Confidence, BoundingRegion)
+end
+
+== Confidence Categorization ==
+
+Analyzer -> Analyzer : ConfidenceSummary.FromFields(extractedFields)
+note right
+  Categorize each field:
+  - High:   confidence > 0.80
+  - Medium: confidence 0.50 - 0.80
+  - Low:    confidence < 0.50
+  Compute counts and average.
+end note
+
+Analyzer --> Ctrl : ConfidenceSummary
+Ctrl --> NgSvc : 200 JSON { totalFields, highCount,\nmediumCount, lowCount, fields... }
+NgSvc --> FieldsUI : ConfidenceSummary
+
+== UI Rendering ==
+
+FieldsUI -> FieldsUI : Populate sortable table\nwith ExtractedField rows
+
+loop For each field row
+  FieldsUI -> Badge : [confidence]="field.confidence"
+  Badge -> Badge : Compute level & CSS class
+  alt confidence > 0.80
+    Badge --> FieldsUI : Green badge "High (92%)"
+  else confidence 0.50 - 0.80
+    Badge --> FieldsUI : Amber badge "Medium (67%)"
+  else confidence < 0.50
+    Badge --> FieldsUI : Red badge "Low (34%)"
+    FieldsUI -> FieldsUI : Highlight row with\nlight red background
+  end
+end
+
+FieldsUI --> User : Display extraction results\nwith color-coded confidence
+
+== Optional: Sort by Confidence ==
+
+User -> FieldsUI : Click "Confidence" column header
+FieldsUI -> FieldsUI : Re-sort fields ascending/descending\nby confidence score
+FieldsUI --> User : Updated table order
+
+@enduml

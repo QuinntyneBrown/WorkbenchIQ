@@ -1,0 +1,38 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for Glossary Management
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Component Diagram (Glossary Management)
+
+Person(user, "User")
+
+Container_Boundary(angular, "Angular SPA") {
+  Component(editorComp, "GlossaryEditorComponent", "Standalone Component", "Accordion-based editor for categories and terms with inline CRUD.")
+  Component(searchComp, "TermSearchComponent", "Standalone Component", "Search-as-you-type with debounce and optional category filter.")
+  Component(ngGlossarySvc, "GlossaryService", "Injectable Service", "HTTP client wrapper for all glossary REST endpoints.")
+}
+
+Container_Boundary(dotnet, "ASP.NET Core Backend") {
+  Component(glossaryCtrl, "GlossaryController", "ApiController", "REST endpoints for glossary CRUD, search, and formatted output at /api/glossary/{persona}/*.")
+  Component(glossarySvc, "GlossaryService", "IGlossaryService impl", "Business logic: persona alias resolution, uniqueness validation, term sorting, prompt formatting.")
+  Component(glossaryRepo, "GlossaryRepository", "IGlossaryRepository impl", "JSON file I/O: reads and writes glossary.json from the prompts directory.")
+}
+
+ContainerDb(store, "Glossary Store", "JSON file", "prompts/glossary.json")
+
+Rel(user, editorComp, "Manages categories & terms")
+Rel(user, searchComp, "Searches terminology")
+Rel(editorComp, ngGlossarySvc, "CRUD operations")
+Rel(searchComp, ngGlossarySvc, "searchTerms()")
+
+Rel(ngGlossarySvc, glossaryCtrl, "HTTP requests", "JSON / HTTPS")
+Rel(glossaryCtrl, glossarySvc, "Delegates business logic")
+Rel(glossarySvc, glossaryRepo, "LoadAsync / SaveAsync")
+Rel(glossaryRepo, store, "Reads / writes JSON")
+
+@enduml

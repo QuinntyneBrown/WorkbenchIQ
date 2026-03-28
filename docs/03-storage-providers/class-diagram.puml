@@ -1,0 +1,75 @@
+@startuml class-diagram
+scale max 1024 width
+
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+
+title Storage Providers -- Class Diagram (.NET 8)
+
+enum StorageBackend {
+  Local
+  AzureBlob
+}
+
+class StorageOptions {
+  +Backend : StorageBackend
+  +LocalRoot : string
+  +PublicBaseUrl : string?
+  +AzureBlob : AzureBlobOptions
+}
+
+class AzureBlobOptions {
+  +AccountName : string?
+  +AccountKey : string?
+  +ContainerName : string?
+  +AuthMode : string
+  +TimeoutSeconds : int
+  +RetryCount : int
+  +AllowCreateContainer : bool
+}
+
+interface IStorageProvider <<interface>> {
+  +SaveFileAsync(appId, filename, content, ct) : Task<string>
+  +LoadFileAsync(appId, filename, ct) : Task<Stream?>
+  +LoadFileByPathAsync(path, ct) : Task<Stream?>
+  +GetFileUrlAsync(appId, filename, ct) : Task<string?>
+  +SaveMetadataAsync(appId, metadata, ct) : Task
+  +LoadMetadataAsync(appId, ct) : Task<JsonDocument?>
+  +SaveCuResultAsync(appId, payload, ct) : Task<string>
+  +LoadCuResultAsync(appId, ct) : Task<JsonDocument?>
+  +ListApplicationsAsync(ct) : Task<IReadOnlyList<string>>
+  +DeleteApplicationAsync(appId, ct) : Task<bool>
+}
+
+class LocalStorageProvider {
+  -_options : StorageOptions
+  -_storageRoot : string
+  -_logger : ILogger
+}
+
+class AzureBlobStorageProvider {
+  -_options : StorageOptions
+  -_containerClient : BlobContainerClient
+  -_logger : ILogger
+}
+
+class StorageServiceCollectionExtensions <<static>> {
+  +{static} AddStorageProvider(services, configuration) : IServiceCollection
+}
+
+StorageOptions --> StorageBackend
+StorageOptions *-- AzureBlobOptions
+
+IStorageProvider <|.. LocalStorageProvider
+IStorageProvider <|.. AzureBlobStorageProvider
+
+LocalStorageProvider ..> StorageOptions : <<uses>>
+AzureBlobStorageProvider ..> StorageOptions : <<uses>>
+AzureBlobStorageProvider ..> AzureBlobOptions : <<uses>>
+
+StorageServiceCollectionExtensions ..> IStorageProvider : registers
+StorageServiceCollectionExtensions ..> StorageOptions : binds
+
+@enduml

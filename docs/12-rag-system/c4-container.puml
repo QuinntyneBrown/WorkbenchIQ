@@ -1,0 +1,33 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for RAG System
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Container Diagram (RAG System)
+
+Person(user, "User", "Submits questions grounded in policy context.")
+Person(admin, "Admin", "Triggers policy indexing.")
+
+System_Boundary(sys, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Single-page application. Renders chat interface, citation panel, and admin policy index management views.")
+  Container(api, "Backend API", "ASP.NET Core 8, C#", "Hosts RAG orchestration: indexing pipeline, hybrid search, context assembly, and REST endpoints.")
+  ContainerDb(db, "PostgreSQL + pgvector", "PostgreSQL 16, pgvector extension", "Stores policy_chunks table with text, metadata, tsvector, and dense vector embeddings.")
+  Container(cache, "In-Memory Cache", "IMemoryCache", "Caches embedding vectors keyed by content hash to reduce Azure OpenAI API calls.")
+}
+
+System_Ext(azureEmbed, "Azure OpenAI Embeddings", "text-embedding-3-small deployment", "Generates 1536-dimensional dense vectors from text.")
+System_Ext(azureChat, "Azure OpenAI Chat", "GPT-4o deployment", "Produces grounded answers using RAG context.")
+
+Rel(user, spa, "Asks questions", "HTTPS")
+Rel(admin, spa, "Manages indexes", "HTTPS")
+Rel(spa, api, "REST calls", "JSON over HTTPS")
+Rel(api, db, "CRUD on policy_chunks;\nvector similarity search;\nfull-text search", "EF Core / Npgsql")
+Rel(api, cache, "Cache get/set embeddings")
+Rel(api, azureEmbed, "POST /embeddings", "HTTPS / REST")
+Rel(api, azureChat, "POST /chat/completions\n(system + RAG context + query)", "HTTPS / REST")
+
+@enduml

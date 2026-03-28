@@ -1,0 +1,43 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for Confidence Scoring
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- C4 Component Diagram (Confidence Scoring)
+
+Container_Boundary(spa, "Angular SPA") {
+  Component(confidenceSvc, "ConfidenceService", "Angular Injectable", "Calls backend analysis endpoints and exposes results as Observables.")
+  Component(badgeComp, "ConfidenceBadgeComponent", "Angular Standalone Component", "Renders color-coded badge (green/amber/red) with percentage label for a single confidence score.")
+  Component(fieldsComp, "ExtractedFieldsComponent", "Angular Standalone Component", "Displays sortable table of extracted fields, each row embedding a ConfidenceBadgeComponent.")
+  Component(summaryComp, "ConfidenceSummaryComponent", "Angular Standalone Component", "Renders aggregate donut chart and count cards for high/medium/low tiers.")
+}
+
+Container_Boundary(api, "Backend API (.NET 8)") {
+  Component(controller, "ConfidenceController", "ASP.NET Core ApiController", "POST /api/confidence/analyze and /analyze/fields. Accepts multipart file upload, delegates to IConfidenceAnalyzer.")
+  Component(iAnalyzer, "IConfidenceAnalyzer", "Interface", "AnalyzeDocumentAsync, AnalyzeDocumentWithSummaryAsync.")
+  Component(analyzer, "ConfidenceAnalyzer", ".NET Class", "Implements IConfidenceAnalyzer. Calls CU SDK, maps response fields to ExtractedField records, builds ConfidenceSummary.")
+  Component(options, "ConfidenceAnalyzerOptions", "Options POCO", "DefaultAnalyzerId, HighThreshold (0.80), MediumThreshold (0.50). Bound from IConfiguration.")
+  Component(models, "Domain Models", "C# Records", "ExtractedField, BoundingRegion, ConfidenceSummary, ConfidenceLevel enum.")
+}
+
+System_Ext(contentUnderstanding, "Azure AI Content Understanding", "Document analysis with per-field confidence scores.")
+
+Rel(fieldsComp, confidenceSvc, "Calls")
+Rel(summaryComp, confidenceSvc, "Calls")
+Rel(fieldsComp, badgeComp, "Renders per row")
+Rel(confidenceSvc, controller, "HTTP POST", "JSON / multipart")
+
+Rel(controller, iAnalyzer, "Injects", ".NET DI")
+Rel(analyzer, iAnalyzer, "Implements")
+Rel(analyzer, options, "Reads config from")
+Rel(analyzer, models, "Creates instances of")
+Rel(controller, models, "Serializes to JSON")
+
+Rel(analyzer, contentUnderstanding, "Submits document, reads field scores", "Azure SDK")
+
+@enduml

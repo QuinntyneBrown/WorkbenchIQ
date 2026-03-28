@@ -1,0 +1,121 @@
+@startuml class-diagram
+scale max 1024 width
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title LLM Analysis Pipeline -- Class Diagram (.NET 8 / Angular 17+)
+
+package "API Layer" {
+  class AnalysisController {
+    - _analysisService : IAnalysisService
+    + RunAnalysisAsync(appId : Guid, request : AnalysisRequest) : Task<AnalysisResponse>
+    + RunDeepDiveAsync(appId : Guid, request : DeepDiveRequest) : Task<AnalysisResult>
+  }
+}
+
+package "Service Layer" {
+  interface IAnalysisService {
+    + RunAnalysisAsync(appId : Guid, persona : string, sections : string[]) : Task<AnalysisResponse>
+    + RunDeepDiveAsync(appId : Guid, section : string, subsection : string) : Task<AnalysisResult>
+  }
+
+  class AnalysisService {
+    - _openAIClient : IOpenAIClient
+    - _promptRepository : IPromptRepository
+    - _maxWorkersPerSection : int
+    + RunAnalysisAsync(appId : Guid, persona : string, sections : string[]) : Task<AnalysisResponse>
+    + RunDeepDiveAsync(appId : Guid, section : string, subsection : string) : Task<AnalysisResult>
+    - RunSectionPromptsAsync(section : string, prompts : PromptTemplate[], context : string) : Task<Dictionary<string, AnalysisResult>>
+    - ParseLlmResponse(raw : string, subsection : string) : JsonDocument
+    - TryRepairTruncatedJson(text : string) : JsonDocument
+  }
+}
+
+package "Infrastructure" {
+  interface IOpenAIClient {
+    + GetChatCompletionAsync(messages : ChatMessage[], options : CompletionOptions) : Task<CompletionResponse>
+  }
+
+  class AzureOpenAIClient {
+    - _primaryEndpoint : EndpointConfig
+    - _fallbackEndpoint : EndpointConfig
+    - _miniEndpoint : EndpointConfig
+    - _httpClient : HttpClient
+    + GetChatCompletionAsync(messages : ChatMessage[], options : CompletionOptions) : Task<CompletionResponse>
+    - CallEndpointAsync(config : EndpointConfig, body : object) : Task<CompletionResponse>
+    - HandleRateLimitAsync(attempt : int) : Task
+  }
+
+  interface IPromptRepository {
+    + LoadPromptsAsync(persona : string) : Task<Dictionary<string, Dictionary<string, PromptTemplate>>>
+    + SavePromptsAsync(persona : string, prompts : Dictionary<string, Dictionary<string, PromptTemplate>>) : Task
+  }
+
+  class PromptRepository {
+    - _promptsRoot : string
+    + LoadPromptsAsync(persona : string) : Task<Dictionary<string, Dictionary<string, PromptTemplate>>>
+    + SavePromptsAsync(persona : string, prompts : Dictionary<string, Dictionary<string, PromptTemplate>>) : Task
+  }
+}
+
+package "Domain Models" {
+  class PromptTemplate {
+    + Section : string
+    + Subsection : string
+    + TemplateText : string
+    + MaxTokens : int?
+    + JsonSchema : JsonDocument?
+  }
+
+  class AnalysisResult {
+    + Section : string
+    + Subsection : string
+    + Raw : string
+    + Parsed : JsonDocument
+    + Usage : TokenUsage
+    + IsTruncated : bool
+    + Error : string?
+  }
+
+  class TokenUsage {
+    + PromptTokens : int
+    + CompletionTokens : int
+    + TotalTokens : int
+  }
+
+  class AnalysisResponse {
+    + Results : Dictionary<string, Dictionary<string, AnalysisResult>>
+    + TotalUsage : TokenUsage
+    + ProcessingMode : string
+  }
+}
+
+package "Angular Frontend" #LightBlue {
+  class AnalysisService <<service>> {
+    + triggerAnalysis(appId : string, request : AnalysisRequest) : Observable<AnalysisResponse>
+    + triggerDeepDive(appId : string, request : DeepDiveRequest) : Observable<AnalysisResult>
+    + streamProgress(appId : string) : Observable<SectionProgress>
+  }
+
+  class AnalysisResultsComponent <<component>> {
+    + results : AnalysisResponse
+    + selectedSection : string
+    + onDeepDive(section : string, subsection : string) : void
+    + onSectionSelect(section : string) : void
+  }
+}
+
+AnalysisController --> IAnalysisService
+AnalysisService ..|> IAnalysisService
+AnalysisService --> IOpenAIClient
+AnalysisService --> IPromptRepository
+AzureOpenAIClient ..|> IOpenAIClient
+PromptRepository ..|> IPromptRepository
+AnalysisService ..> PromptTemplate : uses
+AnalysisService ..> AnalysisResult : produces
+AnalysisResult *-- TokenUsage
+AnalysisResponse o-- AnalysisResult
+AnalysisResultsComponent --> AnalysisService : injects
+
+@enduml

@@ -1,0 +1,25 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for RAG System
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- System Context (RAG System)
+
+Person(user, "WorkbenchIQ User", "Submits questions and reviews AI-generated answers grounded in policy documents.")
+Person(admin, "Admin", "Manages policy documents and triggers indexing jobs.")
+
+System(workbenchiq, "WorkbenchIQ", ".NET 8 + Angular 17+ web application. Provides AI-powered document analysis with retrieval-augmented generation over policy documents.")
+
+System_Ext(azureOai, "Azure OpenAI Service", "Provides text-embedding-3-small for vector embeddings and GPT models for chat completions.")
+System_Ext(postgres, "PostgreSQL + pgvector", "Stores policy chunks with dense vector embeddings for similarity search.")
+
+Rel(user, workbenchiq, "Asks questions, views citations", "HTTPS")
+Rel(admin, workbenchiq, "Uploads policies, triggers indexing", "HTTPS")
+Rel(workbenchiq, azureOai, "Generates embeddings and chat completions", "HTTPS / REST")
+Rel(workbenchiq, postgres, "Reads/writes policy chunks and vectors", "TCP / EF Core")
+
+@enduml

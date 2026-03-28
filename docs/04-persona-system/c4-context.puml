@@ -1,0 +1,24 @@
+@startuml c4-context
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+scale max 1024 width
+
+title WorkbenchIQ -- C4 Context Diagram (Persona System Focus)
+
+Person(underwriter, "Insurance Professional", "Underwriter, claims adjuster, or mortgage analyst who selects a persona and processes documents.")
+
+System(workbenchiq, "WorkbenchIQ", "Multi-persona insurance document processing platform.\n.NET 8 API + Angular 17+ SPA.\nPersona selection drives all downstream behaviour.")
+
+System_Ext(azure_cu, "Azure Content Understanding", "Document, image, and video analysis with persona-specific custom analyzers and field schemas.")
+System_Ext(azure_openai, "Azure OpenAI Service", "GPT-4o for persona-driven LLM prompts: summarisation, risk assessment, compliance checks.")
+System_Ext(azure_search, "Azure AI Search", "Vector index partitioned by persona for RAG policy lookup.")
+System_Ext(azure_blob, "Azure Blob Storage", "Stores uploaded documents, images, and videos organised by persona.")
+System_Ext(azure_cosmos, "Azure Cosmos DB", "Application data, extracted fields, and analysis results keyed by persona.")
+
+Rel(underwriter, workbenchiq, "Selects persona, uploads documents, reviews analysis", "HTTPS")
+Rel(workbenchiq, azure_cu, "Sends persona-specific analyzer ID and field schema", "REST")
+Rel(workbenchiq, azure_openai, "Sends persona-specific prompt templates", "REST")
+Rel(workbenchiq, azure_search, "Queries persona-partitioned policy index", "REST")
+Rel(workbenchiq, azure_blob, "Stores/retrieves documents per persona", "REST")
+Rel(workbenchiq, azure_cosmos, "Reads/writes persona-scoped data", "REST")
+
+@enduml

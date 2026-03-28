@@ -1,0 +1,23 @@
+@startuml c4-context
+scale max 1024 width
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title WorkbenchIQ -- C4 Context Diagram (LLM Analysis Pipeline)
+
+Person(underwriter, "Underwriter / Claims Analyst", "Reviews documents and triggers LLM-powered analysis")
+
+System(workbenchiq, "WorkbenchIQ", ".NET 8 Web API + Angular 17+ SPA\nDocument analysis platform with persona-specific LLM prompts")
+
+System_Ext(azure_openai, "Azure OpenAI Service", "Chat completion endpoints\n(primary, fallback, mini deployments)")
+System_Ext(azure_cu, "Azure Content Understanding", "Document extraction and OCR\nConverts uploads to Markdown")
+System_Ext(azure_ad, "Microsoft Entra ID", "Azure AD authentication\nfor OpenAI and user identity")
+System_Ext(azure_blob, "Azure Blob Storage", "Persists uploaded documents,\nanalysis results, and metadata")
+
+Rel(underwriter, workbenchiq, "Uploads documents, triggers analysis,\nreviews LLM results", "HTTPS")
+Rel(workbenchiq, azure_openai, "Sends chat completion requests\n(prompts + document context)", "HTTPS / REST")
+Rel(workbenchiq, azure_cu, "Extracts Markdown from\nuploaded documents", "HTTPS / REST")
+Rel(workbenchiq, azure_ad, "Obtains bearer tokens\nfor service auth", "OAuth 2.0")
+Rel(workbenchiq, azure_blob, "Reads/writes documents\nand metadata", "HTTPS / REST")
+
+@enduml

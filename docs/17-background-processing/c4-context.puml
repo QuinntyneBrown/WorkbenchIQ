@@ -1,0 +1,28 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for Background Processing
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- System Context (Background Processing)
+
+Person(user, "WorkbenchIQ User", "Uploads documents and triggers processing to extract content and run LLM analysis.")
+
+System(workbenchiq, "WorkbenchIQ", "Web application that processes documents via background jobs, extracting content with Content Understanding and analyzing it with LLM prompts.")
+
+System_Ext(cu, "Azure Content Understanding", "Cloud service that extracts structured content, fields, and markdown from uploaded documents.")
+
+System_Ext(llm, "Azure OpenAI Service", "Large language model service used for analysis prompts (summarization, risk assessment, claims processing).")
+
+System_Ext(browser, "Web Browser", "Renders the Angular SPA; polls the API for processing status updates.")
+
+Rel(user, browser, "Interacts via")
+Rel(browser, workbenchiq, "HTTPS requests", "REST / JSON\nPolling for status")
+Rel(workbenchiq, cu, "Sends documents for extraction", "HTTPS / REST")
+Rel(workbenchiq, llm, "Sends analysis prompts", "HTTPS / REST")
+Rel(workbenchiq, browser, "Returns processing status and results")
+
+@enduml

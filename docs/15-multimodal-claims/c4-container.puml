@@ -1,0 +1,29 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for Multimodal Claims Processing
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Container Diagram (Multimodal Claims Processing)
+
+Person(adjuster, "Claims Adjuster", "Uploads claim media and reviews automated assessments.")
+
+System_Boundary(sys, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Claims overview, damage viewer with annotated photos, video timeline with keyframes, summary dashboard, eligibility and medical records panels.")
+  Container(api, "Backend API", "ASP.NET Core 8, C#", "REST endpoints for claim submission and retrieval. Orchestrates multimodal processing pipeline, extraction, aggregation, and assessment engine.")
+  Container(signalr, "SignalR Hub", "ASP.NET Core 8, C#", "Pushes real-time processing progress events to connected clients.")
+  ContainerDb(db, "Claims Database", "SQL Server / PostgreSQL", "Stores claim metadata, processing status, extraction results, and assessment outcomes.")
+  Container(blob, "Blob Storage", "Azure Blob / S3", "Persists uploaded media files (PDF, DOCX, JPG, PNG, MP4, MOV) and extracted keyframe images.")
+}
+
+Rel(adjuster, spa, "Uses", "HTTPS")
+Rel(spa, api, "REST calls", "JSON over HTTPS\n(multipart for uploads)")
+Rel(spa, signalr, "Receives progress", "WebSocket")
+Rel(api, signalr, "Publishes progress events")
+Rel(api, db, "Reads/writes claims data", "EF Core")
+Rel(api, blob, "Stores/retrieves media", "SDK")
+
+@enduml

@@ -1,0 +1,39 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for Authentication
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Component Diagram (Authentication)
+
+Person(user, "User")
+
+Container_Boundary(angular, "Angular SPA") {
+  Component(loginComp, "LoginComponent", "Standalone Component", "Reactive login form with username/password fields.")
+  Component(authGuard, "AuthGuard", "CanActivateFn", "Protects routes; redirects unauthenticated users to /login.")
+  Component(ngAuthSvc, "AuthService", "Injectable Service", "Manages auth state; calls backend auth endpoints.")
+  Component(authInterceptor, "AuthInterceptor", "HttpInterceptorFn", "Catches 401 responses and triggers redirect to /login.")
+}
+
+Container_Boundary(dotnet, "ASP.NET Core Backend") {
+  Component(apiKeyMw, "ApiKeyAuthenticationMiddleware", "IMiddleware", "Validates X-API-Key header using constant-time comparison. Supports dev-mode bypass.")
+  Component(authCtrl, "AuthController", "ApiController", "Exposes GET /api/auth/check, POST /api/auth/login, POST /api/auth/logout.")
+  Component(authSvc, "AuthService", "IAuthService impl", "Validates credentials, creates and validates HMAC-SHA256 session tokens.")
+  Component(authOpts, "AuthOptions", "IOptions<T>", "Typed configuration: API key, secret, users, session TTL.")
+}
+
+Rel(user, loginComp, "Enters credentials")
+Rel(loginComp, ngAuthSvc, "login()")
+Rel(authGuard, ngAuthSvc, "checkAuth()")
+Rel(authInterceptor, ngAuthSvc, "Clears auth state on 401")
+
+Rel(ngAuthSvc, apiKeyMw, "HTTP requests", "JSON / HTTPS")
+Rel(apiKeyMw, authCtrl, "Forwards allowed requests")
+Rel(authCtrl, authSvc, "Delegates auth logic")
+Rel(authSvc, authOpts, "Reads configuration")
+Rel(apiKeyMw, authOpts, "Reads API key")
+
+@enduml

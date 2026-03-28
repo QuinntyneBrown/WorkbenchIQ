@@ -1,0 +1,45 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for Policy Management
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Component Diagram (Policy Management)
+
+Person(user, "User")
+
+Container_Boundary(angular, "Angular SPA") {
+  Component(listComp, "PolicyListComponent", "Standalone Component", "Filterable policy table grouped by category with navigation to editor.")
+  Component(editorComp, "PolicyEditorComponent", "Standalone Component", "Reactive form for creating and editing policies with nested criteria arrays.")
+  Component(ngPolicySvc, "PolicyService", "Injectable Service", "HTTP client wrapper for policy CRUD and evaluation endpoints.")
+}
+
+Container_Boundary(dotnet, "ASP.NET Core Backend") {
+  Component(policiesCtrl, "PoliciesController", "ApiController", "REST endpoints: GET/POST/PUT/DELETE /api/policies, POST /api/policies/evaluate.")
+  Component(policySvc, "PolicyService", "IPolicyService impl", "Orchestrates CRUD, prompt formatting, citation validation, and keyword matching.")
+  Component(policyRepo, "PolicyRepository", "IPolicyRepository impl", "Reads/writes per-persona JSON files. Manages IMemoryCache entries.")
+  Component(policyEngine, "PolicyEngine", "IPolicyEngine impl", "Evaluates case data against criteria. Generates findings and APPROVE/REFER/DECLINE recommendations.")
+  Component(memCache, "IMemoryCache", "Framework Service", "Caches deserialized PolicySet objects per persona with sliding expiration.")
+}
+
+ContainerDb(jsonStore, "Policy JSON Store", "File System", "Per-persona policy JSON files.")
+
+Container_Ext(llm, "LLM Service", "Azure OpenAI", "Receives policy-enriched prompts.")
+
+Rel(user, listComp, "Browses policies")
+Rel(user, editorComp, "Edits policies")
+Rel(listComp, ngPolicySvc, "getPolicies()")
+Rel(editorComp, ngPolicySvc, "createPolicy() / updatePolicy() / deletePolicy()")
+
+Rel(ngPolicySvc, policiesCtrl, "HTTP requests", "JSON / HTTPS")
+Rel(policiesCtrl, policySvc, "Delegates business logic")
+Rel(policySvc, policyRepo, "Data access")
+Rel(policySvc, policyEngine, "Policy evaluation")
+Rel(policyRepo, memCache, "Read/invalidate cache")
+Rel(policyRepo, jsonStore, "Read/write JSON files")
+Rel(policySvc, llm, "FormatForPromptAsync()", "Formatted markdown")
+
+@enduml

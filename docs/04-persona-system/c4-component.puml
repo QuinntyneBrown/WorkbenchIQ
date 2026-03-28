@@ -1,0 +1,83 @@
+@startuml c4-component
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+scale max 1024 width
+
+title WorkbenchIQ -- C4 Component Diagram (Persona System)
+
+' ──────────────────────────────────────────────
+'  Angular SPA
+' ──────────────────────────────────────────────
+Container_Boundary(spa, "Angular SPA") {
+
+    Component(personaSelector, "PersonaSelectorComponent", "Angular Component", "Dropdown in top nav bar.\nDisplays persona icon, name, and theme colour.\nEmits selection change.")
+
+    Component(personaStore, "PersonaStore", "Injectable (Signals)", "Holds personas and activePersona signals.\nPersists selection to localStorage.\nAll views read activePersona().")
+
+    Component(personaSvcNg, "PersonaService", "Injectable (HttpClient)", "Calls GET /api/personas and\nGET /api/personas/{id}.\nCaches enabled persona list.")
+
+    Component(uploadComponent, "DocumentUploadComponent", "Angular Component", "Reads active persona to set\nmediaType and persona context\non upload requests.")
+
+    Component(analysisView, "AnalysisResultsComponent", "Angular Component", "Displays persona-specific\nfield extraction and LLM\nanalysis results.")
+}
+
+' ──────────────────────────────────────────────
+'  .NET API
+' ──────────────────────────────────────────────
+Container_Boundary(api, "API Server (.NET 8)") {
+
+    Component(personaCtrl, "PersonaController", "ApiController", "GET /api/personas\nGET /api/personas/{id}\nGET /api/personas/{id}/schema")
+
+    Component(personaSvc, "PersonaService", "IPersonaService impl", "Resolves PersonaConfiguration\nfrom IOptions<PersonaSettings>.\nNormalises legacy aliases.")
+
+    Component(personaCfg, "PersonaSettings", "IOptions<T>", "Strongly-typed config loaded\nfrom appsettings.json.\nValidated at startup.")
+
+    Component(analysisCtrl, "AnalysisController", "ApiController", "POST /api/analysis\nAccepts personaId, files,\nmediaType.")
+
+    Component(docProcessor, "IDocumentProcessingService", "Service", "Calls Azure CU with persona\nanalyzer ID and field schema.")
+
+    Component(llmService, "ILlmAnalysisService", "Service", "Runs persona prompt templates\nagainst extracted fields via\nAzure OpenAI.")
+
+    Component(ragService, "IRagService", "Service", "Queries AI Search index\nfiltered by persona for\npolicy context.")
+}
+
+' ──────────────────────────────────────────────
+'  External systems
+' ──────────────────────────────────────────────
+System_Ext(azure_cu, "Azure Content Understanding", "Custom analyzers per persona")
+System_Ext(azure_openai, "Azure OpenAI", "GPT-4o")
+System_Ext(azure_search, "Azure AI Search", "Persona-partitioned index")
+ContainerDb_Ext(cosmos, "Cosmos DB", "Persona-scoped data")
+
+' ──────────────────────────────────────────────
+'  Angular internal relationships
+' ──────────────────────────────────────────────
+Rel(personaSelector, personaStore, "selectPersona()")
+Rel(personaStore, personaSvcNg, "getAll()")
+Rel(uploadComponent, personaStore, "reads activePersona()")
+Rel(analysisView, personaStore, "reads activePersona()")
+
+' ──────────────────────────────────────────────
+'  Angular -> API
+' ──────────────────────────────────────────────
+Rel(personaSvcNg, personaCtrl, "HTTP GET", "JSON")
+Rel(uploadComponent, analysisCtrl, "HTTP POST", "multipart + personaId")
+
+' ──────────────────────────────────────────────
+'  API internal relationships
+' ──────────────────────────────────────────────
+Rel(personaCtrl, personaSvc, "GetAllAsync(), GetByIdAsync()")
+Rel(personaSvc, personaCfg, "reads IOptions")
+Rel(analysisCtrl, personaSvc, "resolve config, schema, prompts")
+Rel(analysisCtrl, docProcessor, "ProcessAsync()")
+Rel(analysisCtrl, llmService, "RunPromptsAsync()")
+Rel(analysisCtrl, ragService, "SearchPoliciesAsync()")
+
+' ──────────────────────────────────────────────
+'  API -> External
+' ──────────────────────────────────────────────
+Rel(docProcessor, azure_cu, "Analyze(analyzerId, schema)")
+Rel(llmService, azure_openai, "Chat completions")
+Rel(ragService, azure_search, "Vector search + persona filter")
+Rel(analysisCtrl, cosmos, "Read/write results")
+
+@enduml

@@ -1,0 +1,42 @@
+@startuml c4-component
+scale max 1024 width
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+
+title WorkbenchIQ -- C4 Component Diagram (Storage Provider Library)
+
+Container_Boundary(api, "Web API (.NET 8)") {
+  Component(controllers, "API Controllers", "ASP.NET Core Controllers", "Handle HTTP requests for file upload, retrieval, metadata, and CU results")
+}
+
+Container_Boundary(storageLib, "Storage Provider Library") {
+  Component(iStorageProvider, "IStorageProvider", "Interface", "Defines SaveFileAsync, LoadFileAsync, GetFileUrlAsync, SaveMetadataAsync, LoadMetadataAsync, SaveCuResultAsync, LoadCuResultAsync, ListApplicationsAsync, DeleteApplicationAsync")
+  Component(storageOptions, "StorageOptions", "Options POCO", "Backend, LocalRoot, PublicBaseUrl, AzureBlobOptions -- bound from IConfiguration")
+  Component(storageBackend, "StorageBackend", "Enum", "Local, AzureBlob")
+  Component(localProvider, "LocalStorageProvider", ".NET Class", "Implements IStorageProvider using System.IO; atomic metadata writes via temp-file rename")
+  Component(azureProvider, "AzureBlobStorageProvider", ".NET Class", "Implements IStorageProvider using Azure.Storage.Blobs SDK; supports DefaultAzureCredential and account-key auth")
+  Component(diExtensions, "StorageServiceCollectionExtensions", "Static Class", "AddStorageProvider(IServiceCollection, IConfiguration) -- reads StorageOptions.Backend, registers the matching provider")
+}
+
+System_Ext(azureBlob, "Azure Blob Storage", "Cloud object store")
+System_Ext(localFs, "Local Filesystem", "Disk storage")
+System_Ext(azureAd, "Microsoft Entra ID", "Token provider")
+
+Rel(controllers, iStorageProvider, "Injects", ".NET DI")
+Rel(diExtensions, iStorageProvider, "Registers implementation for")
+Rel(diExtensions, storageOptions, "Binds from IConfiguration")
+Rel(storageOptions, storageBackend, "Contains")
+
+Rel(localProvider, iStorageProvider, "Implements")
+Rel(azureProvider, iStorageProvider, "Implements")
+
+Rel(localProvider, storageOptions, "Reads config from")
+Rel(azureProvider, storageOptions, "Reads config from")
+
+Rel(localProvider, localFs, "Reads/writes files", "System.IO")
+Rel(azureProvider, azureBlob, "Reads/writes blobs", "Azure.Storage.Blobs")
+Rel(azureProvider, azureAd, "Acquires tokens", "Azure.Identity")
+
+@enduml

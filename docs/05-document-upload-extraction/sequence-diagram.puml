@@ -1,0 +1,119 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Document Upload & Extraction sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+
+title Document Upload & Extraction -- Sequence Diagram
+
+actor User
+participant "Angular\nFileUploadComponent" as Upload
+participant "Angular\nApplicationService" as NgSvc
+participant "ASP.NET Core\nApplicationsController" as Ctrl
+participant "ASP.NET Core\nApplicationService" as Svc
+participant "IStorageProvider" as Store
+participant "IContentUnderstanding\nClient" as CU
+participant "Azure Content\nUnderstanding API" as AzCU
+participant "Angular\nDocumentPreview\nComponent" as Preview
+
+== File Upload Flow ==
+
+User -> Upload : Drag-and-drop files\nor select via picker
+Upload -> Upload : Validate file types & sizes
+Upload -> NgSvc : create(files, externalReference, persona)
+NgSvc -> Ctrl : POST /api/applications\nmultipart/form-data
+Ctrl -> Svc : CreateAsync(files, externalReference, persona)
+Svc -> Svc : Generate application ID\n(8-char UUID prefix)
+
+loop For each uploaded file
+  Svc -> Store : SaveFileAsync(appId, filename, bytes)
+  Store --> Svc : storagePath
+end
+
+Svc -> Svc : Build ApplicationMetadata\n(status = Pending)
+Svc -> Store : SaveMetadataAsync(appId, metadata)
+Store --> Svc : (saved)
+Svc --> Ctrl : ApplicationMetadata
+Ctrl --> NgSvc : 200 JSON
+NgSvc --> Upload : ApplicationMetadata
+Upload --> User : Show success + file list
+
+== Content Extraction Flow (Background) ==
+
+Upload -> NgSvc : extract(appId, background=true)
+NgSvc -> Ctrl : POST /api/applications/{id}/extract?background=true
+Ctrl -> Svc : Update ProcessingStatus = Extracting
+Ctrl -> Ctrl : Enqueue to IBackgroundTaskQueue
+Ctrl --> NgSvc : 202 Accepted
+NgSvc -> NgSvc : Start pollStatus(appId, 3000ms)
+
+... Background processing begins ...
+
+Svc -> Store : LoadMetadataAsync(appId)
+Store --> Svc : ApplicationMetadata
+
+loop For each file in ApplicationMetadata.Files
+  Svc -> Store : LoadFileAsync(appId, filename)
+  Store --> Svc : fileBytes
+
+  Svc -> CU : AnalyzeDocumentAsync(fileBytes, outputMarkdown=true)
+  CU -> AzCU : POST {endpoint}/contentunderstanding/\nanalyzers/{analyzerId}:analyzeBinary\n(application/octet-stream)
+  AzCU --> CU : 202 Accepted\n+ operation-location header
+
+  loop Poll until succeeded or timeout (900s)
+    CU -> AzCU : GET {operation-location}
+    alt Status = succeeded
+      AzCU --> CU : 200 JSON result
+    else Status = running
+      AzCU --> CU : 200 { status: "running" }
+      CU -> CU : Wait 2 seconds
+    else Status = failed
+      AzCU --> CU : 200 { status: "failed", error }
+      CU --> Svc : throw ContentUnderstandingException
+    end
+  end
+
+  CU --> Svc : JsonDocument (raw CU result)
+end
+
+Svc -> Store : SaveCuResultAsync(appId, rawResult)
+Store --> Svc : cuResultPath
+
+Svc -> CU : ExtractMarkdown(rawResult)
+CU --> Svc : (documentMarkdown, markdownPages)
+
+Svc -> CU : ExtractFieldsWithConfidenceAsync(rawResult)
+CU --> Svc : Dictionary<string, ExtractedField>
+
+Svc -> CU : GetConfidenceSummary(fields)
+CU --> Svc : ConfidenceSummary
+
+Svc -> Svc : Update ApplicationMetadata\n(status=Extracted, markdown,\nfields, confidence, analyzerIdUsed)
+Svc -> Svc : Clear ProcessingStatus
+Svc -> Store : SaveMetadataAsync(appId, metadata)
+
+== Frontend Status Polling ==
+
+NgSvc -> Ctrl : GET /api/applications/{id}\n(polling every 3s)
+Ctrl -> Svc : GetAsync(appId)
+Svc -> Store : LoadMetadataAsync(appId)
+Store --> Svc : ApplicationMetadata
+Svc --> Ctrl : ApplicationMetadata
+Ctrl --> NgSvc : 200 JSON
+
+alt ProcessingStatus is null (extraction complete)
+  NgSvc -> NgSvc : Stop polling
+  NgSvc --> Preview : Emit updated ApplicationMetadata
+  Preview -> Preview : Render documentMarkdown\nwith page navigation
+  Preview --> User : Show extracted content\nwith confidence indicators
+else ProcessingStatus = Extracting
+  NgSvc -> NgSvc : Continue polling
+  NgSvc --> User : Show spinner / progress
+else ProcessingStatus = Error
+  NgSvc -> NgSvc : Stop polling
+  NgSvc --> User : Show error message\nwith retry option
+end
+
+@enduml

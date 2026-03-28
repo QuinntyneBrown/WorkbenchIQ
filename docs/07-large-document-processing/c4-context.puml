@@ -1,0 +1,24 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for Large Document Processing
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- System Context (Large Document Processing)
+
+Person(underwriter, "Underwriter", "Uploads and reviews large insurance documents (APS, medical records) for underwriting decisions.")
+
+System(workbenchiq, "WorkbenchIQ", "Web application that processes uploaded documents, detects oversized files, and produces condensed summaries suitable for LLM-based analysis.")
+
+System_Ext(azureOpenAI, "Azure OpenAI Service", "Provides GPT chat-completion endpoints used for batch summarization and consolidation of large documents.")
+
+System_Ext(contentUnderstanding, "Azure Content Understanding", "Extracts structured fields (applicant info, policy details) from uploaded documents via document intelligence models.")
+
+Rel(underwriter, workbenchiq, "Uploads documents,\nreviews summaries,\nasks questions", "HTTPS")
+Rel(workbenchiq, azureOpenAI, "Sends summarization\nand consolidation prompts", "HTTPS / REST")
+Rel(workbenchiq, contentUnderstanding, "Sends documents\nfor field extraction", "HTTPS / REST")
+
+@enduml

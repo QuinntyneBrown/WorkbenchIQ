@@ -1,0 +1,30 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for Confidence Scoring
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Container Diagram (Confidence Scoring)
+
+Person(reviewer, "Document Reviewer", "Reviews extracted fields and confidence scores.")
+
+System_Boundary(sys, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Renders extracted fields with color-coded confidence badges. Provides sortable field tables and summary visualizations.")
+  Container(api, "Backend API", "ASP.NET Core 8, C#", "Hosts confidence analysis endpoints. Wraps Azure AI Content Understanding SDK. Maps CU responses to ExtractedField records and ConfidenceSummary.")
+  ContainerDb(config, "Configuration Store", "appsettings.json / Environment Variables", "Stores analyzer IDs, confidence thresholds (High > 0.80, Medium > 0.50).")
+}
+
+System_Ext(contentUnderstanding, "Azure AI Content Understanding", "Document analysis service returning per-field confidence scores.")
+System_Ext(storage, "Storage Provider", "Azure Blob Storage or local filesystem.")
+
+Rel(reviewer, spa, "Uploads documents, views results", "HTTPS")
+Rel(spa, api, "REST calls", "JSON over HTTPS\n(multipart upload)")
+Rel(api, contentUnderstanding, "Submits documents, receives confidence scores", "HTTPS (Azure SDK)")
+Rel(api, storage, "Reads/writes documents and results", "HTTPS / File I/O")
+Rel(api, config, "Reads analyzer and threshold settings")
+
+@enduml

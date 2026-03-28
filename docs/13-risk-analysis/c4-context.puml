@@ -1,0 +1,20 @@
+@startuml c4-context
+scale max 1024 width
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title Risk Analysis & Deep-Dive -- C4 Context Diagram
+
+Person(underwriter, "Underwriter", "Reviews applications, triggers risk analysis, explores body-system deep dives")
+
+System(workbenchiq, "WorkbenchIQ", "Insurance underwriting workbench that extracts documents, runs LLM analysis, evaluates risk against policies, and provides interactive medical deep-dive views")
+
+System_Ext(azureOpenAI, "Azure OpenAI Service", "GPT-4o LLM used for risk evaluation prompts and deep-dive subsection analysis")
+System_Ext(contentUnderstanding, "Azure AI Content Understanding", "Extracts markdown and structured fields from uploaded documents")
+System_Ext(policyStore, "Policy Store", "JSON-based underwriting policy definitions and glossary files")
+
+Rel(underwriter, workbenchiq, "Triggers risk analysis, views findings, explores deep dives", "HTTPS / Browser")
+Rel(workbenchiq, azureOpenAI, "Sends policy-injected prompts, receives structured risk assessments", "HTTPS / REST")
+Rel(workbenchiq, contentUnderstanding, "Extracts document content (prerequisite step)", "HTTPS / REST")
+Rel(workbenchiq, policyStore, "Loads underwriting policies and medical glossary", "File I/O")
+
+@enduml

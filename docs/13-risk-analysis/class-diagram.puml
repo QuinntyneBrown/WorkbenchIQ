@@ -1,0 +1,172 @@
+@startuml class-diagram
+scale max 1024 width
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam defaultFontSize 10
+skinparam packageStyle rectangle
+
+title Risk Analysis & Deep-Dive -- Class Diagram (.NET 8 / Angular 17+)
+
+package "API Layer" #E8EAF6 {
+  class RiskAnalysisController <<Controller>> {
+    - _riskService : IRiskAnalysisService
+    - _deepDiveService : IDeepDiveService
+    + PostRiskAnalysis(applicationId) : IActionResult
+    + GetRiskAnalysis(applicationId) : IActionResult
+    + PostDeepDive(applicationId, force?) : IActionResult
+    + GetDeepDive(applicationId) : IActionResult
+  }
+}
+
+package "Service Layer" #E8F5E9 {
+  interface IRiskAnalysisService {
+    + RunAsync(applicationId, ct) : Task<RiskAssessment>
+    + GetAsync(applicationId, ct) : Task<RiskAssessment?>
+  }
+
+  class RiskAnalysisService {
+    - _policyRepo : IPolicyRepository
+    - _glossaryService : IGlossaryService
+    - _llmClient : ILlmClient
+    - _riskRepo : IRiskAnalysisRepository
+    - _appRepo : IApplicationRepository
+  }
+
+  interface IDeepDiveService {
+    + RunAsync(applicationId, force, ct) : Task<DeepDiveResult>
+    + GetAsync(applicationId, ct) : Task<DeepDiveResult?>
+    + PollCompletionAsync(applicationId, ct) : Task<ApplicationMetadata>
+  }
+
+  class DeepDiveService {
+    - _llmClient : ILlmClient
+    - _promptLoader : IPromptLoader
+    - _appRepo : IApplicationRepository
+  }
+}
+
+package "Domain Models" #FFF3E0 {
+  class RiskAssessment {
+    + Id : Guid
+    + ApplicationId : string
+    + Timestamp : DateTimeOffset
+    + OverallRiskLevel : string
+    + OverallRationale : string
+    + UnderwritingAction : string
+    + Confidence : string?
+    + DataGaps : List<string>
+    + Findings : List<RiskFactor>
+    + PremiumRecommendation : PremiumRecommendation
+    + RawLlmResponse : string?
+    + Usage : LlmUsage?
+  }
+
+  class RiskFactor {
+    + Category : string
+    + Finding : string
+    + RiskLevel : string
+    + Action : string
+    + Rationale : string?
+    + Citation : PolicyCitation
+  }
+
+  class PolicyCitation {
+    + PolicyId : string
+    + CriteriaId : string?
+    + PolicyName : string
+    + MatchedCondition : string
+    + AppliedAction : string?
+  }
+
+  class PremiumRecommendation {
+    + BaseDecision : string
+    + LoadingPercentage : string
+    + Exclusions : List<string>?
+    + Conditions : List<string>?
+  }
+
+  class DeepDiveResult {
+    + ApplicationId : string
+    + BodySystems : List<BodySystemAnalysis>
+    + PendingInvestigations : List<PendingInvestigation>
+    + LastOfficeVisit : LastOfficeVisitData?
+    + AbnormalLabs : List<AbnormalLabEntry>
+    + LatestVitals : LatestVitalsData?
+    + FamilyHistory : FamilyHistoryData?
+    + HasData : bool
+  }
+
+  class BodySystemAnalysis {
+    + SystemCode : string
+    + SystemName : string
+    + BodyRegion : BodyRegion
+    + Severity : Severity
+    + Diagnoses : List<Diagnosis>
+  }
+
+  enum BodyRegion {
+    Head
+    Chest
+    Abdomen
+    Pelvis
+    JointsSpine
+    Extremities
+    Skin
+    Systemic
+  }
+
+  enum Severity {
+    High
+    Moderate
+    Low
+    Normal
+  }
+}
+
+package "Angular Frontend" #FCE4EC {
+  class RiskAnalysisService <<Injectable>> {
+    + triggerRiskAnalysis(applicationId) : Observable<void>
+    + getRiskAnalysis(applicationId) : Observable<RiskAssessment>
+    + triggerDeepDive(applicationId, force?) : Observable<void>
+    + getDeepDive(applicationId) : Observable<DeepDiveResult>
+    + pollDeepDiveCompletion(applicationId) : Observable<ApplicationMetadata>
+  }
+
+  class BodyDiagramComponent <<Component>> {
+    @Input() bodySystems : BodySystemAnalysis[]
+    @Input() selectedSystemCode : string?
+    @Output() regionClick : EventEmitter<string>
+  }
+
+  class DeepDiveModalComponent <<Component>> {
+    @Input() application : ApplicationMetadata
+    @Output() close : EventEmitter<void>
+    + exportReport() : void
+    + rerunDeepDive(force) : void
+  }
+
+  class AbnormalLabsComponent <<Component>> {
+    @Input() labs : AbnormalLabEntry[]
+    @Output() pageClick : EventEmitter<number>
+  }
+}
+
+' Relationships
+RiskAnalysisController --> IRiskAnalysisService
+RiskAnalysisController --> IDeepDiveService
+IRiskAnalysisService <|.. RiskAnalysisService
+IDeepDiveService <|.. DeepDiveService
+RiskAnalysisService ..> RiskAssessment : creates
+DeepDiveService ..> DeepDiveResult : creates
+RiskAssessment *-- "0..*" RiskFactor
+RiskFactor *-- PolicyCitation
+RiskAssessment *-- PremiumRecommendation
+DeepDiveResult *-- "0..*" BodySystemAnalysis
+BodySystemAnalysis --> BodyRegion
+BodySystemAnalysis --> Severity
+DeepDiveModalComponent --> BodyDiagramComponent : contains
+DeepDiveModalComponent --> AbnormalLabsComponent : contains
+DeepDiveModalComponent ..> "Angular\nRiskAnalysisService" : injects
+"Angular\nRiskAnalysisService" ..> RiskAnalysisController : HTTP
+
+@enduml

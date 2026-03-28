@@ -1,0 +1,132 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Ask IQ Chat class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title Ask IQ Chat -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  class ChatController <<ApiController>> {
+    -_chatService : IChatService
+    +SendMessage(applicationId: string, request: ChatRequest) : Task<IActionResult>
+    +StreamMessage(applicationId: string, request: ChatRequest) : Task
+    +GetConversations(applicationId: string) : Task<IActionResult>
+  }
+
+  class ChatRequest <<Record>> {
+    +Message : string
+    +History : List<ChatMessage>?
+    +ApplicationId : string
+    +ConversationId : string?
+    +Persona : string
+  }
+
+  class ChatResponse <<Record>> {
+    +Response : string
+    +FormatType : ChatFormatType
+    +ConversationId : string
+  }
+
+  class ChatMessage <<Record>> {
+    +Role : string
+    +Content : string
+    +Timestamp : DateTimeOffset
+    +FormatType : ChatFormatType?
+  }
+
+  enum ChatFormatType {
+    PlainText
+    RiskFactors
+    PolicyList
+    Recommendation
+    Comparison
+  }
+
+  interface IChatService {
+    +SendMessageAsync(request: ChatRequest, ct: CancellationToken) : Task<ChatResponse>
+    +StreamMessageAsync(request: ChatRequest, ct: CancellationToken) : IAsyncEnumerable<string>
+    +GetConversationsAsync(applicationId: string, ct: CancellationToken) : Task<List<ConversationSummary>>
+  }
+
+  class ChatService {
+    -_contextBuilder : IChatContextBuilder
+    -_openAIClient : IOpenAIClient
+    -_storageProvider : IStorageProvider
+    -_responseParser : ChatResponseParser
+    -_logger : ILogger<ChatService>
+  }
+
+  interface IChatContextBuilder {
+    +BuildContextAsync(request: ChatContextRequest, ct: CancellationToken) : Task<ChatContext>
+  }
+
+  class ChatContextBuilder {
+    -_storageProvider : IStorageProvider
+    -_ragService : IRagService
+    -_policyService : IPolicyService
+    -_glossaryService : IGlossaryService
+    -_ragOptions : RagOptions
+  }
+
+  class ChatResponseParser <<Static>> {
+    +{static} Parse(rawResponse: string) : (ChatFormatType, string)
+  }
+
+  interface IOpenAIClient {
+    +ChatCompletionAsync(messages: List<ChatMessage>, options: ChatCompletionOptions, ct: CancellationToken) : Task<string>
+    +StreamChatCompletionAsync(messages: List<ChatMessage>, options: ChatCompletionOptions, ct: CancellationToken) : IAsyncEnumerable<string>
+  }
+
+  ChatService ..|> IChatService
+  ChatContextBuilder ..|> IChatContextBuilder
+  ChatController --> IChatService : uses
+  ChatController ..> ChatRequest : receives
+  ChatController ..> ChatResponse : returns
+  ChatService --> IChatContextBuilder : uses
+  ChatService --> IOpenAIClient : uses
+  ChatService --> ChatResponseParser : uses
+  ChatResponse --> ChatFormatType
+  ChatMessage --> ChatFormatType
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class "ChatService\n(Angular)" as NgChatService <<Injectable>> {
+    -http : HttpClient
+    +sendMessage(applicationId: string, request: ChatRequest) : Observable<ChatResponse>
+    +streamMessage(applicationId: string, request: ChatRequest) : Observable<string>
+    +getConversations(applicationId: string) : Observable<ConversationSummary[]>
+  }
+
+  class ChatDrawerComponent <<Standalone>> {
+    +applicationId : string
+    +persona : string
+    +drawerClosed : EventEmitter<void>
+    -messages : ChatMessage[]
+    -conversationId : string
+    +onSend(message: string) : void
+  }
+
+  class ChatMessageComponent <<Standalone>> {
+    +message : ChatMessage
+  }
+
+  class StructuredResponseComponent <<Standalone>> {
+    +formatType : ChatFormatType
+    +content : string
+  }
+
+  ChatDrawerComponent --> NgChatService : injects
+  ChatDrawerComponent --> ChatMessageComponent : renders *
+  ChatMessageComponent --> StructuredResponseComponent : delegates to
+}
+
+NgChatService --> ChatController : HTTP
+
+@enduml

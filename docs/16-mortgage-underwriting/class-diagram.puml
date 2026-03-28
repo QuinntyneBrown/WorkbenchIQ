@@ -1,0 +1,289 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Mortgage Underwriting class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title Mortgage Underwriting -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  enum DocumentType {
+    T4
+    PayStub
+    EmploymentLetter
+    AppraisalReport
+    CreditReport
+    LandTitle
+    OfferToPurchase
+  }
+
+  enum EmploymentType {
+    FullTimeSalaried
+    FullTimeHourly
+    PartTime
+    SelfEmployed
+    Contract
+    Seasonal
+  }
+
+  enum RiskLevel {
+    Low
+    Medium
+    High
+    Critical
+  }
+
+  class GdsRatio <<ValueObject>> {
+    +Value : decimal
+    +MaxThreshold : decimal
+    +IsCompliant : bool
+    +{static} Calculate(housingCost, grossIncome) : GdsRatio
+  }
+
+  class TdsRatio <<ValueObject>> {
+    +Value : decimal
+    +MaxThreshold : decimal
+    +IsCompliant : bool
+    +{static} Calculate(housingCost, debtObligations, grossIncome) : TdsRatio
+  }
+
+  class LtvRatio <<ValueObject>> {
+    +Value : decimal
+    +IsConventional : bool
+    +RequiresInsurance : bool
+    +MaxAmortizationYears : int
+    +{static} Calculate(loanAmount, propertyValue) : LtvRatio
+  }
+
+  class MortgageQualificationRate <<ValueObject>> {
+    +Value : decimal
+    +ContractRate : decimal
+    +FloorRate : decimal
+    +{static} Determine(contractRate, floorRate) : MortgageQualificationRate
+  }
+
+  class ExtractedMortgageField <<Record>> {
+    +Name : string
+    +Value : string?
+    +NormalizedValue : object?
+    +Confidence : double
+    +Provenance : FieldProvenance
+  }
+
+  class FieldProvenance <<Record>> {
+    +SourceDocumentId : string
+    +DocumentType : DocumentType
+    +PageNumber : int
+    +BoundingRegion : BoundingRegion?
+  }
+
+  class LoanCalculation <<Record>> {
+    +Principal : decimal
+    +AmortizationMonths : int
+    +Rate : decimal
+    +MonthlyPayment : decimal
+    +TotalInterest : decimal
+    +InterestProjections : IReadOnlyList<InterestProjection>
+  }
+
+  class ComplianceResult <<Record>> {
+    +IsCompliant : bool
+    +Score : double
+    +GdsResult : GdsRatio
+    +TdsResult : TdsRatio
+    +LtvResult : LtvRatio
+    +StressTestResult : StressTestResult
+    +Violations : IReadOnlyList<ComplianceViolation>
+  }
+
+  class StressTestResult <<Record>> {
+    +QualificationRate : MortgageQualificationRate
+    +StressTestedPayment : decimal
+    +StressTestedGds : GdsRatio
+    +StressTestedTds : TdsRatio
+    +IsAffordable : bool
+    +B20Compliant : bool
+  }
+
+  class MortgageRiskAssessment <<Record>> {
+    +OverallRiskLevel : RiskLevel
+    +CreditRisk : RiskFactor
+    +IncomeStabilityRisk : RiskFactor
+    +LtvRisk : RiskFactor
+    +AmortizationRisk : RiskFactor
+    +MarketRisk : RiskFactor
+  }
+
+  class PropertyValuation <<Record>> {
+    +AppraisedValue : decimal
+    +Comparables : IReadOnlyList<MarketComparable>
+    +ConditionAssessment : ConditionAssessment
+    +MarketTrend : MarketTrend
+    +ValuationConfidence : double
+  }
+
+  interface IMortgageProcessor {
+    +ClassifyDocumentAsync(Stream, CancellationToken) : Task<DocumentType>
+    +ExtractFieldsAsync(Stream, DocumentType, CancellationToken) : Task<IReadOnlyList<ExtractedMortgageField>>
+    +AggregateAsync(IEnumerable<IReadOnlyList<ExtractedMortgageField>>, CancellationToken) : Task<MortgageFieldSet>
+  }
+
+  class MortgageProcessor {
+  }
+
+  interface IIncomeCalculator {
+    +CalculateGrossIncomeAsync(MortgageFieldSet, CancellationToken) : Task<IncomeResult>
+    +CalculateNetIncomeAsync(MortgageFieldSet, CancellationToken) : Task<IncomeResult>
+    +AssessStability(EmploymentType, int) : IncomeStabilityScore
+  }
+
+  class IncomeCalculator {
+  }
+
+  interface ILoanCalculator {
+    +Calculate(decimal, decimal, int) : LoanCalculation
+    +CalculateGds(...) : GdsRatio
+    +CalculateTds(...) : TdsRatio
+    +CalculateLtv(decimal, decimal) : LtvRatio
+  }
+
+  class LoanCalculator {
+  }
+
+  interface IPropertyAnalyzer {
+    +AnalyzeAppraisalAsync(Stream, CancellationToken) : Task<PropertyValuation>
+    +GetComparablesAsync(string, CancellationToken) : Task<IReadOnlyList<MarketComparable>>
+    +AssessConditionAsync(Stream, CancellationToken) : Task<ConditionAssessment>
+  }
+
+  class PropertyAnalyzer {
+  }
+
+  interface IMortgagePolicyEngine {
+    +EvaluateComplianceAsync(MortgageApplication, CancellationToken) : Task<ComplianceResult>
+    +CheckGuideline(string, MortgageApplication) : GuidelineEvaluation
+  }
+
+  class MortgagePolicyEngine {
+  }
+
+  interface IRiskAnalyzer {
+    +AssessRiskAsync(MortgageApplication, CancellationToken) : Task<MortgageRiskAssessment>
+  }
+
+  class MortgageRiskAnalyzer {
+  }
+
+  interface IStressTestService {
+    +RunStressTestAsync(MortgageApplication, CancellationToken) : Task<StressTestResult>
+  }
+
+  class StressTestService {
+  }
+
+  interface IMortgageService {
+    +ProcessApplicationAsync(MortgageApplicationRequest, CancellationToken) : Task<MortgageUnderwritingResult>
+  }
+
+  class MortgageService {
+  }
+
+  class MortgageController <<ApiController>> {
+    +Upload(files: IFormFileCollection) : Task<IActionResult>
+    +Calculate(request: CalculateRequest) : Task<IActionResult>
+    +StressTest(request: StressTestRequest) : Task<IActionResult>
+    +Compliance(request: ComplianceRequest) : Task<IActionResult>
+    +Risk(request: RiskRequest) : Task<IActionResult>
+    +PropertyDeepDive(id: string) : Task<IActionResult>
+    +Process(request: MortgageApplicationRequest) : Task<IActionResult>
+  }
+
+  MortgageProcessor ..|> IMortgageProcessor
+  IncomeCalculator ..|> IIncomeCalculator
+  LoanCalculator ..|> ILoanCalculator
+  PropertyAnalyzer ..|> IPropertyAnalyzer
+  MortgagePolicyEngine ..|> IMortgagePolicyEngine
+  MortgageRiskAnalyzer ..|> IRiskAnalyzer
+  StressTestService ..|> IStressTestService
+  MortgageService ..|> IMortgageService
+
+  MortgageController --> IMortgageService : uses
+  MortgageController --> IMortgageProcessor : uses
+  MortgageController --> IPropertyAnalyzer : uses
+
+  MortgageService --> IMortgageProcessor : classify & extract
+  MortgageService --> IIncomeCalculator : income
+  MortgageService --> ILoanCalculator : loan & ratios
+  MortgageService --> IStressTestService : stress test
+  MortgageService --> IMortgagePolicyEngine : compliance
+  MortgageService --> IRiskAnalyzer : risk
+
+  IMortgageProcessor --> ExtractedMortgageField : creates
+  ExtractedMortgageField --> FieldProvenance : contains
+  FieldProvenance --> DocumentType : references
+  ILoanCalculator --> LoanCalculation : creates
+  ILoanCalculator --> GdsRatio : creates
+  ILoanCalculator --> TdsRatio : creates
+  ILoanCalculator --> LtvRatio : creates
+  IStressTestService --> StressTestResult : creates
+  StressTestResult --> MortgageQualificationRate : contains
+  StressTestResult --> GdsRatio : contains
+  StressTestResult --> TdsRatio : contains
+  IMortgagePolicyEngine --> ComplianceResult : creates
+  IRiskAnalyzer --> MortgageRiskAssessment : creates
+  MortgageRiskAssessment --> RiskLevel : uses
+  IPropertyAnalyzer --> PropertyValuation : creates
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class MortgageSvc <<Injectable>> {
+    -http : HttpClient
+    +uploadDocuments(files: File[]) : Observable<ClassifiedDocument[]>
+    +calculate(appId: string) : Observable<CalculationResult>
+    +runStressTest(appId: string) : Observable<StressTestResult>
+    +checkCompliance(appId: string) : Observable<ComplianceResult>
+    +assessRisk(appId: string) : Observable<RiskAssessment>
+    +getPropertyDeepDive(propertyId: string) : Observable<PropertyValuation>
+  }
+
+  class MortgageWorkbenchComponent <<Standalone>> {
+    +applicationId : string
+    +documents : ClassifiedDocument[]
+    +activeTab : 'calculations' | 'compliance' | 'risk'
+    +onUpload(files: File[]) : void
+    +onProcess() : void
+  }
+
+  class CalculationsPanelComponent <<Standalone>> {
+    +calculations : CalculationResult
+  }
+
+  class CompliancePanelComponent <<Standalone>> {
+    +compliance : ComplianceResult
+  }
+
+  class PropertyDeepDiveModalComponent <<Standalone>> {
+    +propertyId : string
+    +valuation : PropertyValuation
+    +open() : void
+    +close() : void
+  }
+
+  MortgageWorkbenchComponent --> MortgageSvc : injects
+  MortgageWorkbenchComponent --> CalculationsPanelComponent : renders
+  MortgageWorkbenchComponent --> CompliancePanelComponent : renders
+  MortgageWorkbenchComponent --> PropertyDeepDiveModalComponent : opens
+  CalculationsPanelComponent --> MortgageSvc : injects
+  CompliancePanelComponent --> MortgageSvc : injects
+  PropertyDeepDiveModalComponent --> MortgageSvc : injects
+}
+
+MortgageSvc --> MortgageController : HTTP
+
+@enduml

@@ -1,0 +1,33 @@
+@startuml c4-component
+scale max 1024 width
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title WorkbenchIQ .NET Web API -- C4 Component Diagram (LLM Analysis Pipeline)
+
+Container_Ext(spa, "Angular SPA", "Angular 17+", "Frontend application")
+System_Ext(azure_openai, "Azure OpenAI Service", "Chat completion endpoints")
+ContainerDb_Ext(storage, "Application Storage", "Blob / Local FS")
+
+Container_Boundary(api, ".NET 8 Web API") {
+  Component(controller, "AnalysisController", "ASP.NET Core Controller", "POST /api/applications/{appId}/analyze\nPOST /api/applications/{appId}/analyze/deep-dive\nValidates requests, returns results or SSE stream.")
+
+  Component(analysis_svc, "AnalysisService", ".NET Service : IAnalysisService", "Orchestrates the analysis pipeline.\nLoads prompts, determines processing mode,\nfans out parallel prompt execution per section,\naggregates results, handles truncation repair.")
+
+  Component(prompt_repo, "PromptRepository", ".NET Repository : IPromptRepository", "Loads persona-specific prompt templates\nfrom JSON files. Normalizes section/subsection\nstructure. Supports per-persona overrides.")
+
+  Component(openai_client, "AzureOpenAIClient", ".NET HttpClient wrapper : IOpenAIClient", "Calls Azure OpenAI chat completions.\nPrimary/fallback/mini endpoint cascade.\nHTTP 429 retry with exponential backoff.\nAzure AD or API key authentication.")
+
+  Component(models, "Domain Models", "PromptTemplate, AnalysisResult,\nTokenUsage, AnalysisResponse", "Value objects and DTOs carrying\nprompt definitions, LLM responses,\nand token usage statistics.")
+}
+
+Rel(spa, controller, "HTTP requests", "JSON / SSE")
+Rel(controller, analysis_svc, "Delegates analysis\nand deep-dive requests")
+Rel(analysis_svc, prompt_repo, "Loads prompt templates\nfor persona")
+Rel(analysis_svc, openai_client, "Parallel chat completion\ncalls (SemaphoreSlim throttled)")
+Rel(analysis_svc, storage, "Reads ApplicationMetadata,\nwrites analysis results")
+Rel(analysis_svc, models, "Creates and returns")
+Rel(openai_client, azure_openai, "HTTPS / REST\n(primary -> fallback -> mini)")
+Rel(prompt_repo, storage, "Reads prompt JSON files")
+
+@enduml

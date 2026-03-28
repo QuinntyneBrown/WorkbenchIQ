@@ -1,0 +1,27 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for Glossary Management
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Container Diagram (Glossary Management)
+
+Person(user, "User", "Manages domain glossaries and uses chat with glossary-aware context.")
+
+System_Boundary(sys, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Single-page application with glossary editor, term search, and category management components.")
+  Container(api, "Backend API", "ASP.NET Core 8, C#", "Hosts glossary REST endpoints, business logic, prompt formatting, and JSON persistence.")
+  ContainerDb(store, "Glossary Store", "JSON file on disk", "Stores persona glossaries as glossary.json with categories and terms.")
+}
+
+System_Ext(llm, "LLM Provider", "Receives system prompts containing formatted glossary context.")
+
+Rel(user, spa, "Uses", "HTTPS")
+Rel(spa, api, "REST calls", "JSON over HTTPS")
+Rel(api, store, "Reads / writes glossary data")
+Rel(api, llm, "Sends prompt with glossary context", "HTTPS / API")
+
+@enduml

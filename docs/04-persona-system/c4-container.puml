@@ -1,0 +1,34 @@
+@startuml c4-container
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+scale max 1024 width
+
+title WorkbenchIQ -- C4 Container Diagram (Persona System Focus)
+
+Person(user, "Insurance Professional", "Selects a persona and works within that context.")
+
+System_Boundary(workbenchiq, "WorkbenchIQ") {
+
+    Container(spa, "Angular SPA", "Angular 17+", "PersonaStore holds active persona.\nAll views react to persona change.")
+
+    Container(api, "API Server", ".NET 8, ASP.NET Core", "PersonaController exposes endpoints.\nAll processing accepts personaId.")
+
+    ContainerDb(cosmos, "Cosmos DB", "Azure Cosmos DB", "Applications and analysis results.\nPartitioned by personaId.")
+
+    Container(blob, "Blob Storage", "Azure Blob Storage", "Documents organised per persona.")
+
+    Container(search, "AI Search Index", "Azure AI Search", "Policy RAG filtered by persona.")
+}
+
+System_Ext(azure_cu, "Azure Content Understanding", "Persona-specific analyzers.")
+
+System_Ext(azure_openai, "Azure OpenAI Service", "Persona prompt templates.")
+
+Rel(user, spa, "Uses", "HTTPS")
+Rel(spa, api, "REST calls with personaId", "HTTPS / JSON")
+Rel(api, cosmos, "Read/write persona-scoped data", "SDK")
+Rel(api, blob, "Upload/download documents", "SDK")
+Rel(api, search, "RAG query filtered by persona", "REST")
+Rel(api, azure_cu, "Analyze with persona analyzer + schema", "REST")
+Rel(api, azure_openai, "Run persona prompt templates", "REST")
+
+@enduml

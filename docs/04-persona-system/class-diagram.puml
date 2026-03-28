@@ -1,0 +1,127 @@
+@startuml class-diagram
+!theme plain
+scale max 1024 width
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title Persona System -- Class Diagram (.NET 8 / Angular 17+)
+
+' ──────────────────────────────────────────────
+'  .NET Backend
+' ──────────────────────────────────────────────
+package "WorkbenchIQ.Api" as api <<Rectangle>> {
+
+    enum PersonaType {
+        Underwriting
+        LifeHealthClaims
+        AutomotiveClaims
+        MortgageUnderwriting
+        --
+        PropertyCasualtyClaims <<deprecated>>
+    }
+
+    class PersonaConfiguration <<record>> {
+        +Id : PersonaType
+        +Name : string
+        +Description : string
+        +Icon : string
+        +Color : string
+        +FieldSchema : FieldSchema
+        +DefaultPrompts : Dictionary<string, PromptTemplate>
+        +CustomAnalyzerId : string
+        +ImageAnalyzerId : string?
+        +VideoAnalyzerId : string?
+        +Enabled : bool
+    }
+
+    class FieldSchema {
+        +Name : string
+        +Fields : Dictionary<string, FieldDefinition>
+    }
+
+    class FieldDefinition {
+        +Type : string
+        +Description : string
+        +Method : string
+        +EstimateSourceAndConfidence : bool
+        +Properties : Dictionary<string, FieldDefinition>?
+        +Items : FieldDefinition?
+    }
+
+    class PromptTemplate {
+        +Key : string
+        +Category : string
+        +SystemPrompt : string
+        +UserPromptTemplate : string
+    }
+
+    class PersonaSettings <<IOptions>> {
+        +Personas : List<PersonaConfiguration>
+    }
+
+    interface IPersonaService <<interface>> {
+        +GetAllAsync() : Task<IReadOnlyList<PersonaConfiguration>>
+        +GetByIdAsync(id : PersonaType) : Task<PersonaConfiguration>
+        +GetFieldSchemaAsync(id : PersonaType, mediaType : string) : Task<FieldSchema>
+        +GetPromptsAsync(id : PersonaType) : Task<Dictionary<string, PromptTemplate>>
+        +GetAnalyzerIdAsync(id : PersonaType, mediaType : string) : Task<string>
+    }
+
+    class PersonaService {
+        -_settings : PersonaSettings
+        -_logger : ILogger<PersonaService>
+        +NormalizePersonaId(raw : string) : PersonaType
+    }
+
+    class PersonaController <<ApiController>> {
+        -_personaService : IPersonaService
+        +GetAll() : ActionResult<List<PersonaSummaryDto>>
+        +GetById(id : string) : ActionResult<PersonaConfigurationDto>
+        +GetSchema(id : string, mediaType : string?) : ActionResult<FieldSchema>
+    }
+}
+
+' ──────────────────────────────────────────────
+'  Angular Frontend
+' ──────────────────────────────────────────────
+package "workbench-iq (Angular 17+)" as ng <<Rectangle>> {
+
+    class PersonaService <<Injectable>> {
+        -http : HttpClient
+        +getAll() : Observable<PersonaSummary[]>
+        +getById(id : string) : Observable<PersonaConfiguration>
+    }
+
+    class PersonaStore <<Injectable>> {
+        +personas : Signal<PersonaSummary[]>
+        +activePersona : Signal<PersonaSummary | null>
+        +selectPersona(id : string) : void
+        -persistSelection(id : string) : void
+        -restoreSelection() : string | null
+    }
+
+    class PersonaSelectorComponent <<Component>> {
+        +store : PersonaStore
+        +onSelect(id : string) : void
+    }
+}
+
+' ──────────────────────────────────────────────
+'  Relationships
+' ──────────────────────────────────────────────
+PersonaConfiguration --> PersonaType : Id
+PersonaConfiguration --> FieldSchema : contains
+PersonaConfiguration --> PromptTemplate : contains *
+FieldSchema --> FieldDefinition : contains *
+PersonaSettings --> PersonaConfiguration : contains *
+
+IPersonaService <|.. PersonaService : implements
+PersonaService --> PersonaSettings : reads
+PersonaController --> IPersonaService : depends on
+
+PersonaService ..> PersonaStore : HTTP
+PersonaStore --> PersonaSelectorComponent : injected into
+PersonaSelectorComponent ..> PersonaStore : selectPersona()
+
+@enduml

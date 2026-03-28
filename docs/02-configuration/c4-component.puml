@@ -1,0 +1,58 @@
+@startuml c4-component
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+scale max 1024 width
+
+title WorkbenchIQ -- C4 Component Diagram (Configuration Subsystem)
+
+Container_Boundary(api, ".NET Web API") {
+
+    Component(cfgBuilder, "ConfigurationBuilder", "ASP.NET Core", "Aggregates configuration from JSON files, environment variables, Azure App Configuration, and Key Vault into a unified IConfiguration.")
+
+    Component(dbOpts, "DatabaseOptions", "IOptions<DatabaseOptions>", "Backend selection (JSON / PostgreSQL), host, port, credentials, SSL mode.")
+    Component(ragOpts, "RagOptions", "IOptions<RagOptions>", "RAG toggle, top-k, similarity threshold, embedding model and dimensions.")
+    Component(cuOpts, "ContentUnderstandingOptions", "IOptions<ContentUnderstandingOptions>", "Azure CU endpoint, analyzer IDs, API version, Azure AD toggle, confidence scoring.")
+    Component(oaiOpts, "OpenAIOptions", "IOptions<OpenAIOptions>", "Azure OpenAI endpoint, deployment, model, chat overrides, fallback endpoint.")
+    Component(appOpts, "AppOptions", "IOptions<AppOptions>", "Storage root, prompts root, public files URL, API key.")
+    Component(procOpts, "ProcessingOptions", "IOptions<ProcessingOptions>", "Large-doc threshold, chunk size, max sample pages, auto-detect mode.")
+    Component(autoOpts, "AutomotiveClaimsOptions", "IOptions<AutomotiveClaimsOptions>", "Analyzer IDs, policies path, video/image size limits.")
+    Component(mortOpts, "MortgageUnderwritingOptions", "IOptions<MortgageUnderwritingOptions>", "OSFI rates, GDS/TDS/LTV limits, amortisation caps.")
+
+    Component(validator, "OptionsValidator", "IValidateOptions<T>", "Validates all options at startup using DataAnnotations and custom rules.")
+
+    Component(configEndpoint, "ConfigController", "ASP.NET Core Controller", "GET /api/config/client -- returns non-sensitive, UI-relevant configuration to the Angular SPA.")
+}
+
+Container_Boundary(spa, "Angular SPA") {
+
+    Component(envTs, "environment.ts", "TypeScript", "Build-time constants: production flag, API base URL, feature flags.")
+    Component(configSvc, "ConfigService", "Angular @Injectable", "Merges build-time environment with runtime config fetched from backend during APP_INITIALIZER.")
+}
+
+' ── External Systems ──
+System_Ext(azureKV, "Azure Key Vault", "Secrets")
+System_Ext(azureAppCfg, "Azure App Configuration", "Config & flags")
+
+' ── Relationships ──
+Rel(cfgBuilder, azureKV, "Reads secrets", "HTTPS")
+Rel(cfgBuilder, azureAppCfg, "Reads config", "HTTPS")
+
+Rel(cfgBuilder, dbOpts, "Binds section 'Database'")
+Rel(cfgBuilder, ragOpts, "Binds section 'Rag'")
+Rel(cfgBuilder, cuOpts, "Binds section 'ContentUnderstanding'")
+Rel(cfgBuilder, oaiOpts, "Binds section 'OpenAI'")
+Rel(cfgBuilder, appOpts, "Binds section 'App'")
+Rel(cfgBuilder, procOpts, "Binds section 'Processing'")
+Rel(cfgBuilder, autoOpts, "Binds section 'AutomotiveClaims'")
+Rel(cfgBuilder, mortOpts, "Binds section 'MortgageUnderwriting'")
+
+Rel(validator, dbOpts, "Validates")
+Rel(validator, oaiOpts, "Validates")
+Rel(validator, cuOpts, "Validates")
+
+Rel(configEndpoint, appOpts, "Reads non-sensitive values")
+
+Rel(configSvc, envTs, "Reads build-time config")
+Rel(configSvc, configEndpoint, "GET /api/config/client", "HTTPS")
+
+@enduml

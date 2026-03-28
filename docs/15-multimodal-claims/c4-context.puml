@@ -1,0 +1,25 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for Multimodal Claims Processing
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- System Context (Multimodal Claims Processing)
+
+Person(adjuster, "Claims Adjuster", "Reviews insurance claims, uploads supporting media, and acts on assessment recommendations.")
+
+System(workbenchiq, "WorkbenchIQ", "Processes multimodal insurance claims by extracting data from documents, images, and videos, then producing automated damage, liability, fraud, and payout assessments.")
+
+System_Ext(blobstore, "Blob Storage", "Stores uploaded claim media files (documents, images, videos) and extracted keyframes.")
+
+System_Ext(browser, "Web Browser", "Renders the Angular SPA with claim dashboards, annotated damage viewers, and video timelines.")
+
+Rel(adjuster, browser, "Interacts via")
+Rel(browser, workbenchiq, "HTTPS requests", "REST / JSON / SignalR")
+Rel(workbenchiq, blobstore, "Stores and retrieves media", "Azure Blob / S3 SDK")
+Rel(workbenchiq, browser, "Push progress updates", "SignalR WebSocket")
+
+@enduml

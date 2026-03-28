@@ -1,0 +1,149 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Policy Management sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+
+title Policy Management -- Sequence Diagram
+
+actor User
+participant "Angular\nPolicyListComponent" as List
+participant "Angular\nPolicyEditorComponent" as Editor
+participant "Angular\nPolicyService" as NgSvc
+participant "ASP.NET Core\nPoliciesController" as Ctrl
+participant "ASP.NET Core\nPolicyService" as Svc
+participant "ASP.NET Core\nPolicyRepository" as Repo
+participant "ASP.NET Core\nPolicyEngine" as Engine
+participant "JSON File\nStore" as Store
+
+== List Policies ==
+
+User -> List : Navigate to /policies
+List -> NgSvc : getPolicies(persona)
+NgSvc -> Ctrl : GET /api/policies?persona=underwriting
+Ctrl -> Svc : GetPoliciesAsync(persona)
+Svc -> Repo : GetAllAsync(persona)
+Repo -> Repo : Check IMemoryCache
+alt Cache hit
+  Repo --> Svc : PolicySet (cached)
+else Cache miss
+  Repo -> Store : Read JSON file
+  Store --> Repo : Raw JSON
+  Repo -> Repo : Deserialize + cache
+  Repo --> Svc : PolicySet
+end
+Svc --> Ctrl : List<Policy>
+Ctrl --> NgSvc : 200 JSON array
+NgSvc --> List : Policy[]
+List --> User : Render policy table
+
+== Create Policy ==
+
+User -> List : Click "New Policy"
+List -> Editor : Navigate to /policies/new
+User -> Editor : Fill form and submit
+Editor -> NgSvc : createPolicy(policy)
+NgSvc -> Ctrl : POST /api/policies
+Ctrl -> Svc : CreatePolicyAsync(persona, policy)
+Svc -> Repo : GetByIdAsync(persona, policyId)
+alt Policy ID already exists
+  Repo --> Svc : existing Policy
+  Svc --> Ctrl : throw ConflictException
+  Ctrl --> NgSvc : 409 Conflict
+  NgSvc --> Editor : Error
+  Editor --> User : Show duplicate ID error
+else ID is available
+  Repo --> Svc : null
+  Svc -> Repo : AddAsync(persona, policy)
+  Repo -> Store : Read JSON file
+  Store --> Repo : PolicySet
+  Repo -> Repo : Append policy
+  Repo -> Store : Write JSON file
+  Repo -> Repo : InvalidateCache(persona)
+  Repo --> Svc : Policy
+  Svc --> Ctrl : Policy
+  Ctrl --> NgSvc : 201 Created
+  NgSvc --> Editor : Policy
+  Editor --> User : Navigate to policy detail
+end
+
+== Update Policy ==
+
+User -> List : Select policy row
+List -> Editor : Navigate to /policies/{policyId}
+Editor -> NgSvc : getPolicy(policyId)
+NgSvc -> Ctrl : GET /api/policies/{policyId}
+Ctrl -> Svc : GetPolicyAsync(persona, policyId)
+Svc -> Repo : GetByIdAsync(persona, policyId)
+Repo --> Svc : Policy
+Svc --> Ctrl : Policy
+Ctrl --> NgSvc : 200 JSON
+NgSvc --> Editor : Policy
+Editor --> User : Populate form
+
+User -> Editor : Edit fields and save
+Editor -> NgSvc : updatePolicy(policyId, policy)
+NgSvc -> Ctrl : PUT /api/policies/{policyId}
+Ctrl -> Svc : UpdatePolicyAsync(persona, policyId, policy)
+Svc -> Repo : UpdateAsync(persona, policyId, policy)
+Repo -> Store : Read + replace + write
+Repo -> Repo : InvalidateCache(persona)
+Repo --> Svc : Updated Policy
+Svc --> Ctrl : Policy
+Ctrl --> NgSvc : 200 JSON
+NgSvc --> Editor : Policy
+Editor --> User : Show success
+
+== Delete Policy ==
+
+User -> Editor : Click delete + confirm
+Editor -> NgSvc : deletePolicy(policyId)
+NgSvc -> Ctrl : DELETE /api/policies/{policyId}
+Ctrl -> Svc : DeletePolicyAsync(persona, policyId)
+Svc -> Repo : DeleteAsync(persona, policyId)
+Repo -> Store : Read + filter + write
+Repo -> Repo : InvalidateCache(persona)
+Repo --> Svc : void
+Svc --> Ctrl : void
+Ctrl --> NgSvc : 204 No Content
+NgSvc --> Editor : void
+Editor --> User : Navigate to /policies
+
+== Evaluate Policies Against Case Data ==
+
+User -> NgSvc : evaluateCase(caseData)
+NgSvc -> Ctrl : POST /api/policies/evaluate
+Ctrl -> Svc : GetPoliciesAsync(persona)
+Svc -> Repo : GetAllAsync(persona)
+Repo --> Svc : PolicySet
+Svc --> Ctrl : List<Policy>
+Ctrl -> Engine : EvaluateAsync(caseData, policies)
+Engine -> Engine : Iterate criteria per policy
+Engine -> Engine : Score severity per finding
+Engine -> Engine : GenerateRecommendationAsync(findings)
+note right of Engine
+  Decision logic:
+  - Any Fail -> DECLINE
+  - 2+ Warnings -> REFER
+  - 0-1 Warning -> APPROVE
+end note
+Engine --> Ctrl : PolicyEvaluationResult
+Ctrl --> NgSvc : 200 JSON
+NgSvc --> User : Display findings + recommendation
+
+== Format Policies for LLM Prompt ==
+
+participant "ASP.NET Core\nChat / Analysis\nService" as LLM
+
+LLM -> Svc : FormatForPromptAsync(persona, documentText, maxPolicies)
+Svc -> Svc : MatchPoliciesAsync(persona, conditions)
+Svc -> Repo : GetAllAsync(persona)
+Repo --> Svc : PolicySet
+Svc -> Svc : Keyword match against document text
+Svc -> Svc : Format matched policies as markdown
+Svc -> Svc : Append citation requirements
+Svc --> LLM : Formatted prompt string
+
+@enduml

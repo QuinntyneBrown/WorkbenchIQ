@@ -1,0 +1,141 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Glossary Management class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title Glossary Management -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  class GlossaryTerm <<Record>> {
+    +Abbreviation : string
+    +Meaning : string
+    +Context : string?
+    +Examples : List<string>
+    +CategoryId : string
+  }
+
+  class GlossaryCategory <<Record>> {
+    +Id : string
+    +Name : string
+    +Terms : List<GlossaryTerm>
+  }
+
+  class PersonaGlossary <<Record>> {
+    +Persona : string
+    +Name : string
+    +Description : string
+    +Categories : List<GlossaryCategory>
+    +TotalTerms : int
+  }
+
+  class GlossarySummary <<Record>> {
+    +Persona : string
+    +Name : string
+    +Description : string
+    +TermCount : int
+    +CategoryCount : int
+  }
+
+  interface IGlossaryRepository {
+    +LoadAsync(persona: string) : Task<PersonaGlossary?>
+    +SaveAsync(persona: string, glossary: PersonaGlossary) : Task
+    +ListAllAsync() : Task<IReadOnlyList<GlossarySummary>>
+  }
+
+  class GlossaryRepository <<JSON-backed>> {
+    -_promptsRoot : string
+    -_logger : ILogger<GlossaryRepository>
+    +LoadAsync(persona: string) : Task<PersonaGlossary?>
+    +SaveAsync(persona: string, glossary: PersonaGlossary) : Task
+    +ListAllAsync() : Task<IReadOnlyList<GlossarySummary>>
+  }
+
+  interface IGlossaryService {
+    +ListGlossariesAsync() : Task<IReadOnlyList<GlossarySummary>>
+    +GetGlossaryAsync(persona: string) : Task<PersonaGlossary>
+    +SearchAsync(persona: string, query: string, category: string?) : Task<IReadOnlyList<GlossarySearchResult>>
+    +AddTermAsync(persona: string, categoryId: string, term: GlossaryTerm) : Task<GlossaryTerm>
+    +UpdateTermAsync(persona: string, abbreviation: string, updates: TermUpdateRequest) : Task<GlossaryTerm>
+    +DeleteTermAsync(persona: string, abbreviation: string) : Task
+    +AddCategoryAsync(persona: string, category: GlossaryCategory) : Task<GlossaryCategory>
+    +UpdateCategoryAsync(persona: string, categoryId: string, updates: CategoryUpdateRequest) : Task<GlossaryCategory>
+    +DeleteCategoryAsync(persona: string, categoryId: string) : Task
+    +FormatForPromptAsync(persona: string, maxTerms: int) : Task<string>
+  }
+
+  class GlossaryService {
+    -_repository : IGlossaryRepository
+    -_logger : ILogger<GlossaryService>
+  }
+
+  class GlossaryController <<ApiController>> {
+    -_glossaryService : IGlossaryService
+    +List() : Task<IActionResult>
+    +Get(persona: string) : Task<IActionResult>
+    +Search(persona: string, q: string, category: string?) : Task<IActionResult>
+    +GetFormatted(persona: string) : Task<IActionResult>
+    +AddCategory(persona: string, request: CategoryCreateRequest) : Task<IActionResult>
+    +UpdateCategory(persona: string, categoryId: string, request: CategoryUpdateRequest) : Task<IActionResult>
+    +DeleteCategory(persona: string, categoryId: string) : Task<IActionResult>
+    +AddTerm(persona: string, request: TermCreateRequest) : Task<IActionResult>
+    +UpdateTerm(persona: string, abbreviation: string, request: TermUpdateRequest) : Task<IActionResult>
+    +DeleteTerm(persona: string, abbreviation: string) : Task<IActionResult>
+  }
+
+  GlossaryRepository ..|> IGlossaryRepository
+  GlossaryService ..|> IGlossaryService
+  GlossaryService --> IGlossaryRepository : uses
+  GlossaryController --> IGlossaryService : uses
+  PersonaGlossary *-- GlossaryCategory : contains
+  GlossaryCategory *-- GlossaryTerm : contains
+  GlossaryRepository ..> PersonaGlossary : reads/writes
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class "GlossaryService\n(Angular)" as NgGlossaryService <<Injectable>> {
+    -http : HttpClient
+    +listGlossaries() : Observable<GlossarySummary[]>
+    +getGlossary(persona: string) : Observable<PersonaGlossary>
+    +searchTerms(persona: string, query: string, category?: string) : Observable<GlossarySearchResult[]>
+    +addTerm(persona: string, term: TermCreateRequest) : Observable<GlossaryTerm>
+    +updateTerm(persona: string, abbreviation: string, updates: TermUpdateRequest) : Observable<GlossaryTerm>
+    +deleteTerm(persona: string, abbreviation: string) : Observable<void>
+    +addCategory(persona: string, category: CategoryCreateRequest) : Observable<GlossaryCategory>
+    +updateCategory(persona: string, categoryId: string, updates: CategoryUpdateRequest) : Observable<GlossaryCategory>
+    +deleteCategory(persona: string, categoryId: string) : Observable<void>
+  }
+
+  class GlossaryEditorComponent <<Standalone>> {
+    -glossaryService : GlossaryService
+    +persona : string
+    +glossary : PersonaGlossary
+    +onAddTerm(categoryId: string) : void
+    +onUpdateTerm(abbreviation: string) : void
+    +onDeleteTerm(abbreviation: string) : void
+    +onAddCategory() : void
+    +onDeleteCategory(categoryId: string) : void
+  }
+
+  class TermSearchComponent <<Standalone>> {
+    -glossaryService : GlossaryService
+    +persona : string
+    +searchQuery : string
+    +selectedCategory : string?
+    +results : GlossarySearchResult[]
+    +onSearch() : void
+  }
+
+  GlossaryEditorComponent --> NgGlossaryService : injects
+  TermSearchComponent --> NgGlossaryService : injects
+}
+
+NgGlossaryService --> GlossaryController : HTTP
+
+@enduml

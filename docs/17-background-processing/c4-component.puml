@@ -1,0 +1,49 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for Background Processing
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Component Diagram (Background Processing)
+
+Person(user, "User")
+
+Container_Boundary(angular, "Angular SPA") {
+  Component(ngProcSvc, "ProcessingService", "Injectable Service", "Triggers processing, polls for status updates, and handles reset requests via HTTP.")
+  Component(statusComp, "ProcessingStatusComponent", "Standalone Component", "Displays current processing status with spinner, progress text, and error alerts.")
+  Component(progressComp, "ProcessingProgressIndicatorComponent", "Standalone Component", "Renders a multi-step progress bar showing Extract and Analyze phases.")
+}
+
+Container_Boundary(dotnet, "ASP.NET Core Backend") {
+  Component(procCtrl, "ProcessingController", "ApiController", "Exposes POST /process, POST /extract, POST /analyze, POST /reset-status. Validates state and enqueues jobs.")
+  Component(taskQueue, "BackgroundTaskQueue", "IBackgroundTaskQueue impl", "Singleton Channel<ProcessingJob> with bounded capacity. Thread-safe producer-consumer queue.")
+  Component(hostedSvc, "BackgroundProcessingHostedService", "BackgroundService", "Long-running hosted service. Dequeues jobs one at a time and delegates to BackgroundProcessingService.")
+  Component(procSvc, "BackgroundProcessingService", "IBackgroundProcessingService impl", "Orchestrates extraction and analysis phases. Manages ProcessingStatus transitions and error handling.")
+  Component(procOpts, "BackgroundProcessingOptions", "IOptions<T>", "Typed configuration: queue capacity, auto-detect mode, large doc threshold, max workers.")
+  Component(appRepo, "IApplicationRepository", "Repository", "Reads and writes application metadata including processing status fields.")
+}
+
+System_Ext(cu, "Azure Content Understanding", "Document extraction")
+System_Ext(llm, "Azure OpenAI Service", "LLM analysis")
+
+Rel(user, statusComp, "Views status / clicks Reset")
+Rel(statusComp, ngProcSvc, "resetStatus()")
+Rel(progressComp, ngProcSvc, "reads status")
+
+Rel(ngProcSvc, procCtrl, "HTTP requests", "JSON / HTTPS")
+Rel(procCtrl, taskQueue, "EnqueueAsync(job)")
+Rel(procCtrl, procSvc, "ResetStatusAsync()")
+Rel(procCtrl, appRepo, "Loads application for conflict check")
+
+Rel(hostedSvc, taskQueue, "DequeueAsync()")
+Rel(hostedSvc, procSvc, "ExecuteJobAsync()")
+Rel(procSvc, appRepo, "Updates processing status")
+Rel(procSvc, cu, "ExtractAsync()", "HTTPS")
+Rel(procSvc, llm, "AnalyzeAsync()", "HTTPS")
+Rel(procSvc, procOpts, "Reads configuration")
+Rel(taskQueue, procOpts, "Reads queue capacity")
+
+@enduml

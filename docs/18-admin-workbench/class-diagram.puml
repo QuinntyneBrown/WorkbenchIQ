@@ -1,0 +1,186 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Admin Workbench class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam linetype ortho
+
+title Admin Workbench -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  class PromptTemplate <<Record>> {
+    +Section : string
+    +Subsection : string
+    +Text : string
+    +Persona : string
+  }
+
+  class AnalyzerStatus <<Record>> {
+    +AnalyzerId : string
+    +State : string
+    +CreatedAt : DateTimeOffset
+    +FieldCount : int
+  }
+
+  class AnalyzerSchema <<Record>> {
+    +AnalyzerId : string
+    +Fields : List<FieldDefinition>
+  }
+
+  class FieldDefinition <<Record>> {
+    +Name : string
+    +Type : string
+    +Description : string
+  }
+
+  interface IPromptService {
+    +GetPromptsAsync(persona: string) : Task<Dictionary<string, Dictionary<string, string>>>
+    +GetPromptAsync(persona: string, section: string, subsection: string) : Task<PromptTemplate>
+    +SavePromptAsync(persona: string, section: string, subsection: string, text: string) : Task
+    +CreatePromptAsync(persona: string, section: string, subsection: string, text: string) : Task<PromptTemplate>
+    +DeletePromptAsync(persona: string, section: string, subsection: string) : Task
+  }
+
+  class PromptService {
+    -_storageRoot : string
+    -_logger : ILogger<PromptService>
+  }
+
+  interface IAnalyzerService {
+    +GetStatusAsync() : Task<AnalyzerStatus>
+    +GetSchemaAsync() : Task<AnalyzerSchema>
+    +ListAnalyzersAsync() : Task<IReadOnlyList<AnalyzerStatus>>
+    +CreateAnalyzerAsync(schema: AnalyzerSchema) : Task<AnalyzerStatus>
+    +DeleteAnalyzerAsync(analyzerId: string) : Task
+  }
+
+  class AnalyzerService {
+    -_httpClient : HttpClient
+    -_settings : ContentUnderstandingSettings
+    -_logger : ILogger<AnalyzerService>
+  }
+
+  class PromptsController <<ApiController>> {
+    -_promptService : IPromptService
+    +GetPrompts(persona: string) : Task<IActionResult>
+    +GetPrompt(section: string, subsection: string, persona: string) : Task<IActionResult>
+    +UpdatePrompt(section: string, subsection: string, persona: string, body: PromptUpdateRequest) : Task<IActionResult>
+    +CreatePrompt(body: PromptCreateRequest) : Task<IActionResult>
+    +DeletePrompt(section: string, subsection: string, persona: string) : Task<IActionResult>
+  }
+
+  class AnalyzerController <<ApiController>> {
+    -_analyzerService : IAnalyzerService
+    +GetStatus() : Task<IActionResult>
+    +GetSchema() : Task<IActionResult>
+    +ListAnalyzers() : Task<IActionResult>
+    +Create() : Task<IActionResult>
+    +Delete(analyzerId: string) : Task<IActionResult>
+  }
+
+  PromptService ..|> IPromptService
+  AnalyzerService ..|> IAnalyzerService
+  PromptsController --> IPromptService : uses
+  AnalyzerController --> IAnalyzerService : uses
+  AnalyzerSchema *-- FieldDefinition : contains
+  PromptService ..> PromptTemplate : reads/writes
+  AnalyzerService ..> AnalyzerStatus : returns
+  AnalyzerService ..> AnalyzerSchema : returns
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class AdminModule <<NgModule>> {
+    -- lazy-loaded at /admin --
+  }
+
+  class AdminRoutingModule <<NgModule>> {
+    +routes : Route[]
+  }
+
+  class AdminComponent <<Standalone>> {
+    +activeTab : string
+    +onTabChange(tab: string) : void
+  }
+
+  class DocumentsTabComponent <<Standalone>> {
+    +applications : ApplicationListItem[]
+    +onFilesDropped(files: File[]) : void
+    +onProcess(appId: string) : void
+  }
+
+  class PromptsTabComponent <<Standalone>> {
+    +selectedSection : string
+    +selectedSubsection : string
+    +promptText : string
+    +onSave() : void
+    +onCreate() : void
+    +onDelete() : void
+  }
+
+  class AnalyzerTabComponent <<Standalone>> {
+    +status : AnalyzerStatus
+    +schema : AnalyzerSchema
+    +analyzers : AnalyzerStatus[]
+    +onCreate() : void
+    +onDelete(id: string) : void
+  }
+
+  class WorkbenchComponent <<Standalone>> {
+    +applicationId : string
+    +onBack() : void
+  }
+
+  class DocumentPreviewComponent <<Standalone>> {
+    +fileUrl : string
+    +highlightRegions : BoundingBox[]
+    +currentPage : number
+  }
+
+  class ExtractedFieldsPanelComponent <<Standalone>> {
+    +fields : ExtractedField[]
+    +onFieldClick(field: ExtractedField) : void
+  }
+
+  class AnalysisResultsPanelComponent <<Standalone>> {
+    +sections : AnalysisSection[]
+    +expandedSection : string
+  }
+
+  class TopNavComponent <<Standalone>> {
+    +showWorkbenchControls : boolean
+    +onNavigate(route: string) : void
+  }
+
+  class LandingPageComponent <<Standalone>> {
+    +applications : ApplicationListItem[]
+    +searchQuery : string
+    +viewMode : string
+    +onSelectApp(id: string) : void
+    +onCreateApp(files: File[]) : void
+  }
+
+  class AuthGuard <<Injectable>> {
+    +canActivate() : Observable<boolean>
+  }
+
+  AdminModule *-- AdminRoutingModule
+  AdminComponent --> DocumentsTabComponent
+  AdminComponent --> PromptsTabComponent
+  AdminComponent --> AnalyzerTabComponent
+  AdminRoutingModule --> AuthGuard : protects routes
+  WorkbenchComponent *-- DocumentPreviewComponent
+  WorkbenchComponent *-- ExtractedFieldsPanelComponent
+  WorkbenchComponent *-- AnalysisResultsPanelComponent
+}
+
+PromptsTabComponent --> PromptsController : HTTP
+AnalyzerTabComponent --> AnalyzerController : HTTP
+DocumentsTabComponent --> PromptsController : HTTP (indirect)
+
+@enduml

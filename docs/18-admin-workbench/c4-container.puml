@@ -1,0 +1,35 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for Admin Workbench
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Container Diagram (Admin Workbench)
+
+Person(admin, "Administrator", "Configures system via admin tabs.")
+Person(analyst, "Analyst", "Uses workbench to review applications.")
+
+System_Boundary(sys, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Single-page application with admin module (Documents, Prompts, Policies, Analyzer, Glossary tabs), landing page, top navigation, and workbench view.")
+  Container(api, "Backend API", "ASP.NET Core 8, C#", "REST API with PromptsController, AnalyzerController, PoliciesController, ApplicationsController. Background processing for document extraction and analysis.")
+  ContainerDb(promptstore, "Prompt Store", "JSON file on disk", "Persona-scoped prompt templates stored as prompts.json.")
+  ContainerDb(policystore, "Policy Store", "JSON file on disk", "Underwriting policies stored as JSON with category, criteria, and modifying factors.")
+  ContainerDb(appstore, "Application Store", "Azure Blob / local disk", "Uploaded documents, extraction results, and application metadata.")
+}
+
+System_Ext(azurecu, "Azure Content Understanding", "Document extraction with custom analyzers and field schemas.")
+System_Ext(llm, "Azure OpenAI", "GPT-4 for document analysis and chat.")
+
+Rel(admin, spa, "Uses admin tabs", "HTTPS")
+Rel(analyst, spa, "Uses workbench view", "HTTPS")
+Rel(spa, api, "REST calls", "JSON over HTTPS")
+Rel(api, promptstore, "Reads / writes prompts")
+Rel(api, policystore, "Reads / writes policies")
+Rel(api, appstore, "Reads / writes applications and documents")
+Rel(api, azurecu, "Manages analyzers, extracts documents", "HTTPS / REST")
+Rel(api, llm, "Sends analysis prompts", "HTTPS / API")
+
+@enduml

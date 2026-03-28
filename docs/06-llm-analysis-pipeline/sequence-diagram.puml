@@ -1,0 +1,105 @@
+@startuml sequence-diagram
+scale max 1024 width
+
+title LLM Analysis Pipeline -- Sequence Diagram (.NET 8 / Angular 17+)
+
+actor User
+participant "Angular SPA\n(AnalysisService)" as SPA
+participant "AnalysisController" as Ctrl
+participant "AnalysisService" as Svc
+participant "IPromptRepository" as Repo
+participant "AzureOpenAIClient" as LLM
+database "Application\nStorage" as Store
+
+User -> SPA : Click "Analyze"
+activate SPA
+
+SPA -> Ctrl : POST /api/applications/{appId}/analyze\n{ persona, sections }
+activate Ctrl
+
+Ctrl -> Svc : RunAnalysisAsync(appId, persona, sections)
+activate Svc
+
+Svc -> Store : Load ApplicationMetadata
+Store --> Svc : appMetadata (with documentMarkdown)
+
+Svc -> Repo : LoadPromptsAsync(persona)
+activate Repo
+Repo --> Svc : Dictionary<section, Dictionary<subsection, PromptTemplate>>
+deactivate Repo
+
+Svc -> Svc : DetectProcessingMode(docSize, threshold)
+note right : Standard (<100KB)\nor LargeDocument (>=100KB)
+
+loop For each section (sequential)
+  Svc -> Svc : Prepare subsection work items
+
+  group Parallel Execution [SemaphoreSlim(maxWorkers=4)]
+    par subsection prompts
+      Svc -> LLM : GetChatCompletionAsync(messages, options)
+      activate LLM
+
+      alt Primary endpoint succeeds
+        LLM --> Svc : CompletionResponse
+      else HTTP 429 on primary
+        LLM -> LLM : Switch to fallback endpoint
+        LLM --> Svc : CompletionResponse
+      else HTTP 429 on fallback
+        LLM -> LLM : Switch to mini model
+        LLM --> Svc : CompletionResponse
+      else Retry with backoff
+        LLM -> LLM : Wait (exponential backoff)
+        LLM --> Svc : CompletionResponse
+      end
+      deactivate LLM
+
+      Svc -> Svc : ParseLlmResponse(raw)\nStrip code fences\nParse JSON or repair truncation
+    end
+  end
+
+  Svc -> Svc : Aggregate section results
+  Svc --> SPA : SSE: SectionComplete(section)
+  note right : Optional progress\nstreaming via SSE
+end
+
+Svc -> Store : Save results to ApplicationMetadata
+Svc --> Ctrl : AnalysisResponse
+deactivate Svc
+
+Ctrl --> SPA : 200 OK { results, totalUsage, processingMode }
+deactivate Ctrl
+
+SPA -> SPA : Render AnalysisResultsComponent
+SPA --> User : Display analysis results
+deactivate SPA
+
+== Deep-Dive (single subsection re-analysis) ==
+
+User -> SPA : Click "Deep Dive" on subsection
+activate SPA
+
+SPA -> Ctrl : POST /api/applications/{appId}/analyze/deep-dive\n{ section, subsection }
+activate Ctrl
+
+Ctrl -> Svc : RunDeepDiveAsync(appId, section, subsection)
+activate Svc
+
+Svc -> Store : Load ApplicationMetadata\n(reuse batchSummaries if large-doc mode)
+Svc -> Repo : LoadPromptsAsync(persona)
+Svc -> LLM : GetChatCompletionAsync(messages, options)
+activate LLM
+LLM --> Svc : CompletionResponse
+deactivate LLM
+
+Svc -> Svc : ParseLlmResponse(raw)
+Svc -> Store : Update subsection result
+Svc --> Ctrl : AnalysisResult
+deactivate Svc
+
+Ctrl --> SPA : 200 OK { result }
+deactivate Ctrl
+
+SPA --> User : Update subsection display
+deactivate SPA
+
+@enduml

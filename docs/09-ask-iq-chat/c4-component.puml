@@ -1,0 +1,48 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for Ask IQ Chat
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- C4 Component Diagram (Ask IQ Chat)
+
+Container_Boundary(angular, "Angular SPA") {
+  Component(chatDrawer, "ChatDrawerComponent", "Angular Standalone Component", "Right-side drawer panel with message list, text input, persona badge, and conversation selector.")
+  Component(chatMsg, "ChatMessageComponent", "Angular Standalone Component", "Renders individual message bubbles; delegates structured formats to StructuredResponseComponent.")
+  Component(structResp, "StructuredResponseComponent", "Angular Standalone Component", "Template-switches on FormatType to render risk cards, policy cards, recommendation cards, or comparison tables.")
+  Component(ngChatSvc, "ChatService (Angular)", "Injectable Service", "HTTP calls to chat endpoints; SSE streaming support.")
+}
+
+Container_Boundary(api, "Backend API (.NET 8)") {
+  Component(chatCtrl, "ChatController", "ASP.NET Core ApiController", "POST /api/applications/{id}/chat, GET conversations. Handles streaming via text/event-stream.")
+  Component(chatSvc, "ChatService", "Scoped Service, implements IChatService", "Orchestrates context assembly, LLM call, response parsing, and conversation persistence.")
+  Component(ctxBuilder, "ChatContextBuilder", "Scoped Service, implements IChatContextBuilder", "Assembles system prompt from glossary, policies (RAG or full), app metadata, and LLM analysis outputs.")
+  Component(respParser, "ChatResponseParser", "Static Helper", "Detects structured JSON formats (RiskFactors, PolicyList, Recommendation, Comparison) in raw LLM output.")
+}
+
+System_Ext(openai, "Azure OpenAI", "Chat completions and embeddings")
+System_Ext(ragEngine, "IRagService", "Hybrid vector + keyword search over policy chunks")
+System_Ext(glossary, "IGlossaryService", "Persona-specific glossary terms")
+System_Ext(policy, "IPolicyService", "Full policy text (fallback)")
+System_Ext(storage, "IStorageProvider", "Application metadata, conversations")
+
+Rel(chatDrawer, ngChatSvc, "Calls")
+Rel(chatDrawer, chatMsg, "Renders *")
+Rel(chatMsg, structResp, "Delegates structured formats")
+Rel(ngChatSvc, chatCtrl, "HTTP / SSE")
+
+Rel(chatCtrl, chatSvc, "Delegates to")
+Rel(chatSvc, ctxBuilder, "Build context")
+Rel(chatSvc, respParser, "Parse response")
+Rel(chatSvc, openai, "Chat completions", "HTTPS")
+Rel(chatSvc, storage, "Save/load conversations")
+
+Rel(ctxBuilder, ragEngine, "Search policies (RAG path)")
+Rel(ctxBuilder, policy, "Load full policies (fallback path)")
+Rel(ctxBuilder, glossary, "Load glossary terms")
+Rel(ctxBuilder, storage, "Load app metadata + LLM outputs")
+
+@enduml

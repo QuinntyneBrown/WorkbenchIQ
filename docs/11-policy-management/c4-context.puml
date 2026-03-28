@@ -1,0 +1,27 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for Policy Management
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- System Context (Policy Management)
+
+Person(underwriter, "Underwriter / Claims Adjuster", "Reviews and manages insurance policies; uses policies to assess risk and adjudicate claims.")
+
+Person(admin, "Policy Administrator", "Creates, updates, and deletes policy rules via the policy editor.")
+
+System(workbenchiq, "WorkbenchIQ", "Web application that manages underwriting and claims policies, evaluates applications against policy criteria, and formats policies for AI-assisted analysis.")
+
+System_Ext(llm, "LLM Service", "Azure OpenAI or equivalent. Receives formatted policies as prompt context for risk analysis and chat.")
+
+System_Ext(browser, "Web Browser", "Renders the Angular SPA for policy browsing and editing.")
+
+Rel(underwriter, browser, "Interacts via")
+Rel(admin, browser, "Manages policies via")
+Rel(browser, workbenchiq, "HTTPS requests", "REST / JSON")
+Rel(workbenchiq, llm, "Sends policy-enriched prompts", "HTTPS / JSON")
+
+@enduml

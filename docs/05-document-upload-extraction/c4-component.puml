@@ -1,0 +1,48 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for Document Upload & Extraction
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Component Diagram (Document Upload & Extraction)
+
+Person(user, "User")
+
+Container_Boundary(angular, "Angular SPA") {
+  Component(uploadComp, "FileUploadComponent", "Standalone Component", "Drag-and-drop file upload with type/size validation and progress indicator.")
+  Component(previewComp, "DocumentPreviewComponent", "Standalone Component", "Renders extracted markdown with page navigation and confidence-highlighted fields.")
+  Component(statusComp, "ProcessingStatusComponent", "Standalone Component", "Displays spinner, success, or error state for background extraction.")
+  Component(ngAppSvc, "ApplicationService", "Injectable Service", "Manages application CRUD, file upload via FormData, extraction triggers, and status polling via interval-based Observable.")
+}
+
+Container_Boundary(dotnet, "ASP.NET Core Backend") {
+  Component(appCtrl, "ApplicationsController", "ApiController", "POST /api/applications (multipart upload), POST .../extract, GET .../files/{name}, GET/DELETE .../applications/{id}.")
+  Component(appSvc, "ApplicationService", "IApplicationService impl", "Orchestrates upload-to-extraction pipeline: file storage, CU invocation, field extraction, confidence aggregation, metadata updates.")
+  Component(cuClient, "ContentUnderstandingClient", "IContentUnderstandingClient impl", "Calls Azure CU analyzeBinary endpoint, polls operation-location, parses markdown and fields with confidence scores. Supports retry with exponential backoff.")
+  Component(storageProvider, "IStorageProvider", "LocalStorageProvider / AzureBlobStorageProvider", "Abstracts file and metadata persistence across local file system and Azure Blob Storage backends.")
+  Component(cuOptions, "ContentUnderstandingOptions", "IOptions<T>", "Typed configuration: endpoint, analyzer ID, API version, auth mode, retry policy, poll timeout.")
+  Component(bgQueue, "IBackgroundTaskQueue", "Channel-based queue", "Accepts extraction work items for processing outside the HTTP request lifetime.")
+}
+
+System_Ext(azureCU, "Azure Content Understanding API", "POST .../analyzers/{id}:analyzeBinary")
+System_Ext(azureBlob, "Azure Blob Storage", "File and metadata persistence")
+
+Rel(user, uploadComp, "Drops or selects files")
+Rel(user, previewComp, "Views extracted content")
+Rel(uploadComp, ngAppSvc, "create(), extract()")
+Rel(previewComp, ngAppSvc, "get(), getFileUrl()")
+Rel(statusComp, ngAppSvc, "pollStatus()")
+
+Rel(ngAppSvc, appCtrl, "HTTP requests", "JSON / multipart")
+Rel(appCtrl, appSvc, "Delegates business logic")
+Rel(appCtrl, bgQueue, "Enqueues background extraction")
+Rel(appSvc, cuClient, "AnalyzeDocumentAsync()")
+Rel(appSvc, storageProvider, "Save/load files and metadata")
+Rel(cuClient, cuOptions, "Reads configuration")
+Rel(cuClient, azureCU, "REST calls", "HTTPS + Bearer / API key")
+Rel(storageProvider, azureBlob, "Blob SDK", "HTTPS")
+
+@enduml

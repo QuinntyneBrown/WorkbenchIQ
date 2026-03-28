@@ -1,0 +1,26 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for Confidence Scoring
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- C4 Context Diagram (Confidence Scoring)
+
+Person(reviewer, "Document Reviewer", "Uploads documents, reviews extracted fields, triages low-confidence results.")
+Person(admin, "Administrator", "Configures custom analyzers and confidence thresholds.")
+
+System(workbenchiq, "WorkbenchIQ", "Web application for content understanding workflows.\nBuilt with .NET 8 + Angular 17+.\nExtracts document fields and scores confidence.")
+
+System_Ext(contentUnderstanding, "Azure AI Content Understanding", "Analyzes documents using custom or prebuilt analyzers.\nReturns per-field values with confidence scores (0-1).")
+System_Ext(storage, "Storage Provider", "Azure Blob Storage or local filesystem.\nStores uploaded documents and extraction results.")
+
+Rel(reviewer, workbenchiq, "Uploads documents, views confidence results", "HTTPS")
+Rel(admin, workbenchiq, "Configures analyzers and thresholds", "HTTPS / appsettings")
+Rel(workbenchiq, contentUnderstanding, "Submits documents for analysis", "HTTPS (Azure SDK)")
+Rel(workbenchiq, storage, "Persists documents and results", "HTTPS / File I/O")
+
+@enduml

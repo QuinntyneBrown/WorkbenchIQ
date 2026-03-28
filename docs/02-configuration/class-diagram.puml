@@ -1,0 +1,176 @@
+@startuml class-diagram
+!pragma layout smetana
+scale max 1024 width
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam PackageBorderColor #666666
+skinparam PackageBackgroundColor #FAFAFA
+
+title Configuration & Settings -- Class Diagram (.NET 8 / Angular 17+)
+
+' ───────────────────────────────────────────────────────
+'  .NET 8 Backend
+' ───────────────────────────────────────────────────────
+package "ASP.NET Core Configuration" <<Rectangle>> {
+
+    interface IConfiguration {
+        +GetSection(key : string) : IConfigurationSection
+        +GetValue<T>(key : string) : T
+    }
+
+    class ConfigurationBuilder {
+        +AddJsonFile(path : string) : IConfigurationBuilder
+        +AddEnvironmentVariables() : IConfigurationBuilder
+        +AddAzureAppConfiguration() : IConfigurationBuilder
+        +AddAzureKeyVault() : IConfigurationBuilder
+        +Build() : IConfiguration
+    }
+
+    interface "IOptions<T>" as IOptionsT {
+        +Value : T
+    }
+
+    interface "IOptionsSnapshot<T>" as IOptionsSnapshotT {
+        +Value : T
+        +Get(name : string) : T
+    }
+
+    interface "IValidateOptions<T>" as IValidateOptionsT {
+        +Validate(name : string, options : T) : ValidateOptionsResult
+    }
+}
+
+package "WorkbenchIQ.Configuration" <<Rectangle>> {
+
+    class DatabaseOptions {
+        +Backend : string
+        +Host : string?
+        +Port : int?
+        +Database : string?
+        +User : string?
+        +Password : string?
+        +SslMode : string?
+        +Schema : string?
+    }
+
+    class RagOptions {
+        +Enabled : bool
+        +TopK : int
+        +SimilarityThreshold : double
+        +EmbeddingModel : string
+        +EmbeddingDimensions : int
+        +EmbeddingDeployment : string?
+    }
+
+    class ContentUnderstandingOptions {
+        +Endpoint : string
+        +ApiKey : string?
+        +AnalyzerId : string
+        +ApiVersion : string
+        +CompletionDeployment : string?
+        +EmbeddingDeployment : string?
+        +UseAzureAd : bool
+        +EnableConfidenceScores : bool
+        +CustomAnalyzerId : string
+    }
+
+    class OpenAIOptions {
+        +Endpoint : string
+        +ApiKey : string
+        +DeploymentName : string
+        +ApiVersion : string
+        +ModelName : string
+        +UseAzureAd : bool
+        +ChatDeploymentName : string?
+        +ChatModelName : string?
+        +ChatApiVersion : string?
+        +FallbackEndpoint : string?
+        +FallbackApiKey : string?
+        +FallbackDeploymentName : string?
+        +FallbackApiVersion : string?
+        +FallbackUseAzureAd : bool
+    }
+
+    class AppOptions {
+        +StorageRoot : string
+        +PromptsRoot : string
+        +PublicFilesBaseUrl : string?
+        +ApiKey : string?
+    }
+
+    class ProcessingOptions {
+        +LargeDocThresholdKb : int
+        +ChunkSizeChars : int
+        +MaxSamplePages : int
+        +CondensedContextMaxChars : int
+        +AutoDetectMode : bool
+    }
+
+    class AutomotiveClaimsOptions {
+        +Enabled : bool
+        +DocAnalyzer : string
+        +ImageAnalyzer : string
+        +VideoAnalyzer : string
+        +PoliciesPath : string
+        +VideoMaxDurationMinutes : int
+        +ImageMaxSizeMb : int
+    }
+
+    class MortgageUnderwritingOptions {
+        +Enabled : bool
+        +DocAnalyzer : string
+        +PoliciesPath : string
+        +OsfiMqrFloorPct : double
+        +OsfiMqrBufferPct : double
+        +GdsLimitStandard : double
+        +TdsLimitStandard : double
+        +LtvLimitConventional : double
+        +LtvLimitInsured : double
+        +MaxAmortizationInsured : int
+        +MaxAmortizationUninsured : int
+    }
+}
+
+' ───────────────────────────────────────────────────────
+'  Angular 17+ Frontend
+' ───────────────────────────────────────────────────────
+package "Angular Frontend" <<Rectangle>> {
+
+    class "environment.ts" as EnvironmentTs <<file>> {
+        +production : boolean
+        +apiBaseUrl : string
+        +featureFlags : Record<string, boolean>
+    }
+
+    class ConfigService <<@Injectable>> {
+        -_apiBaseUrl : string
+        -_featureFlags : Map<string, boolean>
+        +initialize() : Promise<void>
+        +get apiBaseUrl() : string
+        +isFeatureEnabled(flag : string) : boolean
+    }
+
+    interface IClientConfig {
+        +ApiBaseUrl : string
+        +FeatureFlags : Record<string, boolean>
+    }
+}
+
+' ── Relationships ─────────────────────────────────────
+ConfigurationBuilder .down.> IConfiguration : builds
+
+IOptionsT .down.> DatabaseOptions : binds
+IOptionsT .down.> RagOptions : binds
+IOptionsT .down.> ContentUnderstandingOptions : binds
+IOptionsT .down.> OpenAIOptions : binds
+IOptionsT .down.> AppOptions : binds
+IOptionsT .down.> ProcessingOptions : binds
+IOptionsT .down.> AutomotiveClaimsOptions : binds
+IOptionsT .down.> MortgageUnderwritingOptions : binds
+
+IConfiguration .right.> IOptionsT : provides sections
+
+ConfigService .up.> IClientConfig : fetches
+ConfigService .left.> EnvironmentTs : reads
+
+@enduml

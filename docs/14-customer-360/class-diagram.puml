@@ -1,0 +1,165 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Customer 360 class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title Customer 360 -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  class Customer360Options <<Options>> {
+    +StorageRoot : string
+    +StorageProvider : string
+  }
+
+  class CustomerProfile <<Record>> {
+    +Id : string
+    +Name : string
+    +DateOfBirth : string
+    +Email : string
+    +Phone : string
+    +Address : string
+    +CustomerSince : string
+    +RiskTier : string
+    +Tags : List<string>
+    +Notes : string
+  }
+
+  class CustomerJourneyEvent <<Record>> {
+    +Date : string
+    +Persona : string
+    +ApplicationId : string
+    +EventType : string
+    +Title : string
+    +Summary : string
+    +Status : string
+    +RiskLevel : string?
+    +KeyMetrics : Dictionary<string, object>
+  }
+
+  class PersonaSummary <<Record>> {
+    +Persona : string
+    +PersonaLabel : string
+    +ApplicationCount : int
+    +LatestStatus : string
+    +RiskLevel : string?
+    +KeyMetrics : Dictionary<string, object>
+    +Applications : List<CustomerJourneyEvent>
+  }
+
+  class RiskCorrelation <<Record>> {
+    +Severity : string
+    +Title : string
+    +Description : string
+    +PersonasInvolved : List<string>
+  }
+
+  class Customer360View <<Record>> {
+    +Profile : CustomerProfile
+    +JourneyEvents : List<CustomerJourneyEvent>
+    +PersonaSummaries : List<PersonaSummary>
+    +RiskCorrelations : List<RiskCorrelation>
+    +TotalProducts : int
+    +ActiveClaims : int
+    +OverallRisk : string
+  }
+
+  interface ICustomerRepository {
+    +GetProfileAsync(customerId: string) : Task<CustomerProfile?>
+    +SaveProfileAsync(profile: CustomerProfile) : Task
+    +ListProfilesAsync() : Task<List<CustomerProfile>>
+    +GetJourneyEventsAsync(customerId: string) : Task<List<CustomerJourneyEvent>>
+    +GetRiskCorrelationsAsync(customerId: string) : Task<List<RiskCorrelation>>
+    +DeleteCustomerAsync(customerId: string) : Task<bool>
+  }
+
+  class CustomerRepository {
+    -_options : Customer360Options
+    -_logger : ILogger<CustomerRepository>
+  }
+
+  interface ICustomer360Service {
+    +GetCustomer360ViewAsync(customerId: string) : Task<Customer360View?>
+    +ListCustomersAsync() : Task<List<CustomerProfile>>
+    +SaveCustomerProfileAsync(profile: CustomerProfile) : Task
+    +DeleteCustomerAsync(customerId: string) : Task<bool>
+  }
+
+  class Customer360Service {
+    -_repository : ICustomerRepository
+    -_logger : ILogger<Customer360Service>
+    +BuildPersonaSummaries(events: List<CustomerJourneyEvent>) : List<PersonaSummary>
+    +ComputeActiveClaims(summaries: List<PersonaSummary>) : int
+  }
+
+  class Customer360Controller <<ApiController>> {
+    -_service : ICustomer360Service
+    +ListCustomers() : Task<IActionResult>
+    +GetCustomer360(customerId: string) : Task<IActionResult>
+    +SaveCustomer(profile: CustomerProfile) : Task<IActionResult>
+    +DeleteCustomer(customerId: string) : Task<IActionResult>
+  }
+
+  CustomerRepository ..|> ICustomerRepository
+  Customer360Service ..|> ICustomer360Service
+  Customer360Service --> ICustomerRepository : uses
+  Customer360Service --> Customer360Options : reads
+  Customer360Controller --> ICustomer360Service : uses
+
+  Customer360View *-- CustomerProfile
+  Customer360View *-- CustomerJourneyEvent
+  Customer360View *-- PersonaSummary
+  Customer360View *-- RiskCorrelation
+  PersonaSummary o-- CustomerJourneyEvent
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class "Customer360Service\n(Angular)" as NgCustomer360Service <<Injectable>> {
+    -http : HttpClient
+    +listCustomers() : Observable<CustomerProfile[]>
+    +getCustomer360(customerId: string) : Observable<Customer360View>
+    +saveCustomer(profile: CustomerProfile) : Observable<CustomerProfile>
+    +deleteCustomer(customerId: string) : Observable<void>
+  }
+
+  class CustomerListComponent <<Standalone>> {
+    +customers : CustomerProfile[]
+    +searchTerm : string
+    +onRowClick(customerId: string) : void
+  }
+
+  class CustomerDetailComponent <<Standalone>> {
+    +view : Customer360View
+    +customerId : string
+    +loadCustomer360() : void
+  }
+
+  class CustomerTimelineComponent <<Standalone>> {
+    +events : CustomerJourneyEvent[]
+  }
+
+  class PersonaSummaryCardComponent <<Standalone>> {
+    +summary : PersonaSummary
+    +expanded : boolean
+  }
+
+  class RiskCorrelationBannerComponent <<Standalone>> {
+    +correlation : RiskCorrelation
+  }
+
+  CustomerListComponent --> NgCustomer360Service : injects
+  CustomerDetailComponent --> NgCustomer360Service : injects
+  CustomerDetailComponent --> CustomerTimelineComponent : renders
+  CustomerDetailComponent --> PersonaSummaryCardComponent : renders
+  CustomerDetailComponent --> RiskCorrelationBannerComponent : renders
+}
+
+NgCustomer360Service --> Customer360Controller : HTTP
+
+@enduml

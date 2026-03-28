@@ -1,0 +1,22 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for Authentication
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- System Context (Authentication)
+
+Person(user, "WorkbenchIQ User", "An operator who uses the application to manage workbench tasks.")
+
+System(workbenchiq, "WorkbenchIQ", "Web application providing workbench management capabilities with session-based authentication and API-key protection.")
+
+System_Ext(browser, "Web Browser", "Renders the Angular SPA and stores session cookies.")
+
+Rel(user, browser, "Interacts via")
+Rel(browser, workbenchiq, "HTTPS requests", "REST / JSON")
+Rel(workbenchiq, browser, "Set-Cookie (session token)")
+
+@enduml

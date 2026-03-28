@@ -1,0 +1,168 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Admin Workbench sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+
+title Admin Workbench -- Sequence Diagram
+
+actor User
+participant "Angular\nTopNavComponent" as TopNav
+participant "Angular\nAdminComponent" as Admin
+participant "Angular\nPromptsTabComponent" as PromptsTab
+participant "Angular\nAdminPromptService" as NgPromptSvc
+participant "Angular\nAnalyzerTabComponent" as AnalyzerTab
+participant "Angular\nAdminAnalyzerService" as NgAnalyzerSvc
+participant "Angular\nDocumentsTabComponent" as DocsTab
+participant "Angular\nAdminDocumentService" as NgDocSvc
+participant "ASP.NET Core\nPromptsController" as PromptCtrl
+participant "ASP.NET Core\nPromptService" as PromptSvc
+participant "ASP.NET Core\nAnalyzerController" as AnalyzerCtrl
+participant "ASP.NET Core\nAnalyzerService" as AnalyzerSvc
+participant "Azure Content\nUnderstanding" as AzureCU
+database "prompts.json" as PromptStore
+database "Blob / File\nStorage" as BlobStore
+
+== Navigate to Admin ==
+
+User -> TopNav : Click "Admin" link
+TopNav -> Admin : Router navigates to /admin
+Admin -> Admin : AuthGuard checks authentication
+Admin --> User : Render tab shell (default: Documents)
+
+== Prompt Editing Flow ==
+
+User -> Admin : Select "Prompts" tab
+Admin -> PromptsTab : Activate PromptsTabComponent
+PromptsTab -> NgPromptSvc : getPrompts(persona)
+NgPromptSvc -> PromptCtrl : GET /api/prompts?persona=underwriting
+PromptCtrl -> PromptSvc : GetPromptsAsync("underwriting")
+PromptSvc -> PromptStore : Read prompts.json
+PromptStore --> PromptSvc : JSON content
+PromptSvc --> PromptCtrl : Dictionary<section, subsections>
+PromptCtrl --> NgPromptSvc : 200 { sections }
+NgPromptSvc --> PromptsTab : PromptsData
+PromptsTab --> User : Render section/subsection tree
+
+User -> PromptsTab : Select section & subsection
+PromptsTab -> PromptsTab : Load prompt text into editor
+
+User -> PromptsTab : Edit prompt text & click Save
+PromptsTab -> NgPromptSvc : updatePrompt(persona, section, subsection, text)
+NgPromptSvc -> PromptCtrl : PUT /api/prompts/{section}/{subsection}?persona=underwriting
+PromptCtrl -> PromptSvc : SavePromptAsync(persona, section, subsection, text)
+PromptSvc -> PromptStore : Read existing prompts
+PromptSvc -> PromptSvc : Merge updated prompt
+PromptSvc -> PromptStore : Write prompts.json
+PromptSvc --> PromptCtrl : success
+PromptCtrl --> NgPromptSvc : 200 OK
+NgPromptSvc --> PromptsTab : success
+PromptsTab --> User : Show "Prompt saved" confirmation
+
+User -> PromptsTab : Click "New Prompt"
+PromptsTab -> PromptsTab : Show create form
+User -> PromptsTab : Enter section, subsection, text & submit
+PromptsTab -> NgPromptSvc : createPrompt(persona, section, subsection, text)
+NgPromptSvc -> PromptCtrl : POST /api/prompts?persona=underwriting
+PromptCtrl -> PromptSvc : CreatePromptAsync(persona, section, subsection, text)
+PromptSvc -> PromptStore : Read existing prompts
+alt Duplicate section/subsection
+  PromptSvc --> PromptCtrl : throw ConflictException
+  PromptCtrl --> NgPromptSvc : 409 Conflict
+  NgPromptSvc --> PromptsTab : error
+  PromptsTab --> User : Show error message
+else Unique path
+  PromptSvc -> PromptSvc : Add to tree structure
+  PromptSvc -> PromptStore : Write prompts.json
+  PromptSvc --> PromptCtrl : PromptTemplate
+  PromptCtrl --> NgPromptSvc : 201 Created
+  NgPromptSvc --> PromptsTab : PromptTemplate
+  PromptsTab --> User : Refresh section tree
+end
+
+== Analyzer Creation Flow ==
+
+User -> Admin : Select "Analyzer" tab
+Admin -> AnalyzerTab : Activate AnalyzerTabComponent
+AnalyzerTab -> NgAnalyzerSvc : getStatus()
+NgAnalyzerSvc -> AnalyzerCtrl : GET /api/analyzer/status
+AnalyzerCtrl -> AnalyzerSvc : GetStatusAsync()
+AnalyzerSvc -> AzureCU : GET analyzer status
+AzureCU --> AnalyzerSvc : { id, state, createdAt }
+AnalyzerSvc --> AnalyzerCtrl : AnalyzerStatus
+AnalyzerCtrl --> NgAnalyzerSvc : 200 { analyzerStatus }
+NgAnalyzerSvc --> AnalyzerTab : AnalyzerStatus
+AnalyzerTab --> User : Display status badge + schema
+
+User -> AnalyzerTab : Click "Create Analyzer"
+AnalyzerTab -> NgAnalyzerSvc : createAnalyzer()
+NgAnalyzerSvc -> AnalyzerCtrl : POST /api/analyzer/create
+AnalyzerCtrl -> AnalyzerSvc : CreateAnalyzerAsync(schema)
+AnalyzerSvc -> AzureCU : PUT new analyzer definition
+AzureCU --> AnalyzerSvc : 202 Accepted (creating)
+AnalyzerSvc --> AnalyzerCtrl : AnalyzerStatus { state: "Creating" }
+AnalyzerCtrl --> NgAnalyzerSvc : 202 { creating }
+NgAnalyzerSvc --> AnalyzerTab : status = Creating
+
+loop Poll until Ready or Failed
+  AnalyzerTab -> AnalyzerTab : Wait 5 seconds (RxJS timer)
+  AnalyzerTab -> NgAnalyzerSvc : getStatus()
+  NgAnalyzerSvc -> AnalyzerCtrl : GET /api/analyzer/status
+  AnalyzerCtrl -> AnalyzerSvc : GetStatusAsync()
+  AnalyzerSvc -> AzureCU : GET analyzer status
+  AzureCU --> AnalyzerSvc : { state }
+  AnalyzerSvc --> AnalyzerCtrl : AnalyzerStatus
+  AnalyzerCtrl --> NgAnalyzerSvc : 200
+  NgAnalyzerSvc --> AnalyzerTab : AnalyzerStatus
+end
+
+AnalyzerTab --> User : Display "Ready" or "Failed"
+
+User -> AnalyzerTab : Click "Delete" on an analyzer
+AnalyzerTab -> AnalyzerTab : Show confirmation dialog
+User -> AnalyzerTab : Confirm
+AnalyzerTab -> NgAnalyzerSvc : deleteAnalyzer(analyzerId)
+NgAnalyzerSvc -> AnalyzerCtrl : DELETE /api/analyzer/{analyzerId}
+AnalyzerCtrl -> AnalyzerSvc : DeleteAnalyzerAsync(analyzerId)
+AnalyzerSvc -> AzureCU : DELETE analyzer
+AzureCU --> AnalyzerSvc : 204 No Content
+AnalyzerSvc --> AnalyzerCtrl : success
+AnalyzerCtrl --> NgAnalyzerSvc : 204
+NgAnalyzerSvc --> AnalyzerTab : void
+AnalyzerTab --> User : Remove from list
+
+== Application Creation + Processing Flow ==
+
+User -> Admin : Select "Documents" tab
+Admin -> DocsTab : Activate DocumentsTabComponent
+DocsTab -> NgDocSvc : listApplications(persona)
+NgDocSvc -> PromptCtrl : GET /api/applications?persona=underwriting
+PromptCtrl --> NgDocSvc : 200 [ applications ]
+NgDocSvc --> DocsTab : ApplicationListItem[]
+DocsTab --> User : Render application list
+
+User -> DocsTab : Drag-and-drop files into upload zone
+DocsTab -> DocsTab : Validate file types
+DocsTab -> NgDocSvc : uploadFiles(files, externalRef, persona)
+NgDocSvc -> PromptCtrl : POST /api/applications (multipart)
+PromptCtrl --> NgDocSvc : 201 { id, status: "uploaded" }
+NgDocSvc --> DocsTab : ApplicationListItem
+
+DocsTab -> NgDocSvc : startProcessing(appId, mode)
+NgDocSvc -> PromptCtrl : POST /api/applications/{id}/process
+PromptCtrl -> PromptCtrl : Launch background task
+PromptCtrl --> NgDocSvc : 202 { status: "extracting" }
+
+DocsTab -> NgDocSvc : pollProcessingStatus$(appId)
+loop Poll until complete or error
+  NgDocSvc -> PromptCtrl : GET /api/applications/{appId}
+  PromptCtrl --> NgDocSvc : { processingStatus }
+  NgDocSvc --> DocsTab : status update
+  DocsTab --> User : Update progress indicator
+end
+
+DocsTab --> User : Show "Complete" with link to workbench view
+
+@enduml

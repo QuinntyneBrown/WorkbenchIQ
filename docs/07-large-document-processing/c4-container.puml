@@ -1,0 +1,33 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for Large Document Processing
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Container Diagram (Large Document Processing)
+
+Person(underwriter, "Underwriter", "Uploads large documents and interacts with condensed summaries.")
+
+System_Boundary(sys, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Displays large-document banner, batch summary panel, and routes chat messages through condensed context.")
+  Container(api, "Backend API", "ASP.NET Core 8, C#", "Detects document size, orchestrates chunking and progressive summarization, assembles condensed context.")
+  ContainerDb(config, "Configuration", "appsettings.json / Environment Variables", "Stores processing thresholds: LargeDocThresholdKb, PagesPerBatch, CondensedContextMaxChars, etc.")
+  ContainerDb(prompts, "Prompt Templates", "JSON file", "Externalized LLM prompts for batch summarization and consolidation (large-document-prompts.json).")
+  ContainerDb(storage, "Document Store", "File System / Blob Storage", "Persists original markdown, condensed context, batch summaries, and document statistics.")
+}
+
+System_Ext(azureOpenAI, "Azure OpenAI Service", "GPT chat-completion for summarization and consolidation.")
+System_Ext(contentUnderstanding, "Azure Content Understanding", "Structured field extraction from uploaded documents.")
+
+Rel(underwriter, spa, "Uses", "HTTPS")
+Rel(spa, api, "REST calls", "JSON over HTTPS")
+Rel(api, config, "Reads thresholds\nand settings")
+Rel(api, prompts, "Loads prompt\ntemplates")
+Rel(api, storage, "Reads/writes documents,\ncondensed context,\nbatch summaries")
+Rel(api, azureOpenAI, "Batch summarization\nand consolidation calls", "HTTPS / REST")
+Rel(api, contentUnderstanding, "Extracts structured\nfields from documents", "HTTPS / REST")
+
+@enduml

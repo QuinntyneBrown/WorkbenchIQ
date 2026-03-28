@@ -1,0 +1,102 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Multimodal Claims Processing sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+
+title Multimodal Claims Processing -- Sequence Diagram
+
+actor User
+participant "Angular\nClaimsOverview" as Overview
+participant "Angular\nClaimsService" as NgSvc
+participant "ASP.NET Core\nClaimsController" as Ctrl
+participant "ASP.NET Core\nClaimsService" as Svc
+participant "ASP.NET Core\nIMediaRepository" as Repo
+participant "ASP.NET Core\nMultimodalProcessor" as Proc
+participant "ASP.NET Core\nMediaRouter" as Router
+participant "ASP.NET Core\nDocumentExtractor" as DocEx
+participant "ASP.NET Core\nImageExtractor" as ImgEx
+participant "ASP.NET Core\nVideoExtractor" as VidEx
+participant "ASP.NET Core\nResultAggregator" as Agg
+participant "ASP.NET Core\nClaimsEngine" as Engine
+
+== Claim Submission ==
+
+User -> Overview : Upload files & fill claim form
+Overview -> NgSvc : submitClaim(formData)
+NgSvc -> Ctrl : POST /api/claims/submit\n(multipart/form-data)
+Ctrl -> Svc : SubmitClaimAsync(files, metadata)
+Svc -> Repo : StoreAsync(claimId, file) [per file]
+Repo --> Svc : MediaFile[]
+Svc --> Ctrl : ClaimSubmission { claimId, status: Processing }
+Ctrl --> NgSvc : 202 Accepted { claimId }
+NgSvc --> Overview : Navigate to claim detail
+NgSvc -> NgSvc : Connect SignalR\nfor progress updates
+
+== Parallel Media Extraction (async background) ==
+
+Svc -> Proc : ProcessClaimMediaAsync(claimId, files, progress)
+
+loop for each MediaFile (bounded concurrency = 4)
+  Proc -> Router : RouteAsync(file)
+  Router -> Router : Validate size & MIME type
+
+  alt Document (PDF, DOCX)
+    Router -> DocEx : ExtractAsync(file)
+    DocEx --> Router : DocumentExtractionResult
+  else Image (JPG, PNG)
+    Router -> ImgEx : ExtractAsync(file)
+    ImgEx --> Router : ImageExtractionResult\n(DamageArea[], BoundingBox[], Severity)
+  else Video (MP4, MOV)
+    Router -> VidEx : ExtractAsync(file)
+    VidEx --> Router : VideoExtractionResult\n(KeyFrame[], TimelineEvent[])
+  end
+
+  alt Extraction failed
+    Router -> Router : Retry with exponential backoff
+    Router -> Router : Try fallback extractor
+  end
+
+  Router --> Proc : ExtractionResult
+  Proc -> Repo : UpdateStatusAsync(fileId, Completed)
+  Proc --> NgSvc : progress callback via SignalR
+  NgSvc --> User : Update progress bar
+end
+
+Proc --> Svc : IReadOnlyList<ExtractionResult>
+
+== Aggregation & Assessment ==
+
+Svc -> Agg : AggregateAsync(extractionResults)
+Agg -> Agg : Merge sources &\nresolve conflicts
+Agg --> Svc : AggregatedClaimData
+
+Svc -> Engine : AssessAsync(aggregatedData)
+Engine -> Engine : DamageAssessment
+Engine -> Engine : LiabilityAssessment
+Engine -> Engine : FraudDetection
+Engine -> Engine : PayoutRecommendation
+Engine -> Engine : PolicyAnalysis
+Engine --> Svc : ClaimAssessment
+
+Svc -> Repo : Save ClaimAssessment
+Svc --> NgSvc : SignalR: processing complete
+
+== Display Results ==
+
+User -> NgSvc : getClaim(claimId)
+NgSvc -> Ctrl : GET /api/claims/{claimId}
+Ctrl -> Svc : GetClaimAsync(claimId)
+Svc --> Ctrl : Claim with ClaimAssessment
+Ctrl --> NgSvc : 200 OK
+
+NgSvc -> Ctrl : GET /api/claims/{claimId}/media
+Ctrl -> Svc : GetClaimMediaAsync(claimId)
+Svc --> Ctrl : MediaFile[]
+Ctrl --> NgSvc : 200 OK
+
+NgSvc --> User : Render DamageViewer,\nVideoTimeline,\nClaimsSummary
+
+@enduml

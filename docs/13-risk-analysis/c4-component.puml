@@ -1,0 +1,52 @@
+@startuml c4-component
+scale max 1024 width
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Risk Analysis & Deep-Dive -- C4 Component Diagram
+
+Person(underwriter, "Underwriter", "Triggers analysis and explores results")
+
+Container_Boundary(angularApp, "Angular SPA") {
+  Component(riskAngularSvc, "RiskAnalysisService", "Injectable, Angular 17+", "HTTP client for risk-analysis and deep-dive API endpoints; handles polling for async completion")
+  Component(bodyDiagram, "BodyDiagramComponent", "Standalone Component", "Interactive SVG body map with severity-coloured regions and diagnosis-count badges; emits regionClick events")
+  Component(deepDiveModal, "DeepDiveModalComponent", "Component", "Full-screen overlay with body-diagram panel, scrollable detail cards, re-run and export toolbar")
+  Component(abnormalLabs, "AbnormalLabsComponent", "Component", "Sortable table of out-of-range lab results with colour-coded interpretation column")
+  Component(bodySystemCard, "BodySystemCardComponent", "Component", "Expandable card showing diagnoses, treatments, consults, imaging per body system")
+  Component(pdfPopover, "PdfPreviewPopoverComponent", "Component", "Floating PDF page thumbnail on page-reference badge hover (350ms delay)")
+}
+
+Container_Boundary(apiServer, "API Server (.NET 8)") {
+  Component(riskCtrl, "RiskAnalysisController", "ApiController", "POST/GET /api/applications/{id}/risk-analysis and /deep-dive endpoints")
+  Component(riskSvc, "RiskAnalysisService", "Scoped Service", "Orchestrates policy loading, application-data assembly, LLM prompt execution, JSON parsing, and persistence for risk analysis")
+  Component(ddSvc, "DeepDiveService", "Scoped Service", "Runs deep-dive subsection prompts with context-routing strategy for large documents; merges results into LLM outputs")
+  Component(policyRepo, "IPolicyRepository", "Singleton", "Loads and caches underwriting policies from JSON files; formats for prompt injection")
+  Component(glossarySvc, "IGlossaryService", "Singleton", "Loads medical/insurance glossary and formats for prompt injection")
+  Component(llmClient, "ILlmClient", "Scoped Service", "Wraps Azure OpenAI chat-completion calls with retry and token tracking")
+  Component(appRepo, "IApplicationRepository", "Scoped Service", "Reads and writes ApplicationMetadata including risk_analysis and LLM output subsections")
+}
+
+System_Ext(azureOpenAI, "Azure OpenAI Service", "GPT-4o")
+ContainerDb(storage, "Application Storage", "File / Blob")
+
+' Frontend relationships
+Rel(underwriter, deepDiveModal, "Opens modal, clicks regions, hovers badges")
+Rel(deepDiveModal, bodyDiagram, "Embeds in left panel")
+Rel(deepDiveModal, bodySystemCard, "Renders per body system")
+Rel(deepDiveModal, abnormalLabs, "Renders lab table")
+Rel(deepDiveModal, pdfPopover, "Shows on badge hover")
+Rel(deepDiveModal, riskAngularSvc, "Triggers and polls analysis")
+Rel(riskAngularSvc, riskCtrl, "HTTP POST/GET", "JSON")
+
+' Backend relationships
+Rel(riskCtrl, riskSvc, "Delegates risk analysis")
+Rel(riskCtrl, ddSvc, "Delegates deep-dive analysis")
+Rel(riskSvc, policyRepo, "GetFormattedPoliciesAsync()")
+Rel(riskSvc, glossarySvc, "FormatForPromptAsync()")
+Rel(riskSvc, llmClient, "ChatCompletionAsync()")
+Rel(riskSvc, appRepo, "Get/Save application data")
+Rel(ddSvc, llmClient, "ChatCompletionAsync() per subsection")
+Rel(ddSvc, appRepo, "Get/Save LLM outputs")
+Rel(appRepo, storage, "Read/Write metadata")
+Rel(llmClient, azureOpenAI, "HTTPS / REST")
+
+@enduml

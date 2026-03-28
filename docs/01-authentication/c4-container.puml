@@ -1,0 +1,25 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for Authentication
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Container Diagram (Authentication)
+
+Person(user, "User", "Authenticates via login form or API key.")
+
+System_Boundary(sys, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Single-page application served to the browser. Contains login page, auth guard, and auth interceptor.")
+  Container(api, "Backend API", "ASP.NET Core 8, C#", "Hosts REST endpoints, API-key middleware, and session token management.")
+  ContainerDb(config, "Configuration Store", "appsettings.json / Environment Variables", "Stores API key, auth secret, and user credentials.")
+}
+
+Rel(user, spa, "Uses", "HTTPS")
+Rel(spa, api, "REST calls", "JSON over HTTPS\n+ X-API-Key header\n+ session cookie")
+Rel(api, config, "Reads auth settings")
+Rel(api, spa, "Set-Cookie: session token")
+
+@enduml

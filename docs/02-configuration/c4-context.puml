@@ -1,0 +1,28 @@
+@startuml c4-context
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+scale max 1024 width
+
+title WorkbenchIQ -- C4 Context Diagram (Configuration & Settings)
+
+Person(operator, "Operator / Admin", "Configures application settings via environment variables, Azure Portal, or config files.")
+Person(endUser, "End User", "Uses the WorkbenchIQ web application.")
+
+System(workbenchIQ, "WorkbenchIQ", "Document intelligence platform with persona-based analysis. .NET 8 backend, Angular 17+ frontend.")
+
+System_Ext(azureKeyVault, "Azure Key Vault", "Stores secrets: API keys, connection strings, certificates.")
+System_Ext(azureAppConfig, "Azure App Configuration", "Centralised feature flags and configuration key-values.")
+System_Ext(azureOpenAI, "Azure OpenAI Service", "GPT-4.1 completions and embeddings. Configured via OpenAIOptions.")
+System_Ext(azureCU, "Azure Content Understanding", "Document analysis and field extraction. Configured via ContentUnderstandingOptions.")
+System_Ext(postgresql, "PostgreSQL", "Relational store for cases and extracted data. Configured via DatabaseOptions.")
+
+Rel(operator, workbenchIQ, "Sets configuration", "env vars / Azure Portal")
+Rel(endUser, workbenchIQ, "Uses", "HTTPS")
+
+Rel(workbenchIQ, azureKeyVault, "Reads secrets at startup", "HTTPS / Managed Identity")
+Rel(workbenchIQ, azureAppConfig, "Reads config & feature flags", "HTTPS / Managed Identity")
+Rel(workbenchIQ, azureOpenAI, "Calls completions & embeddings", "HTTPS")
+Rel(workbenchIQ, azureCU, "Calls document analyzers", "HTTPS")
+Rel(workbenchIQ, postgresql, "Reads/writes case data", "TCP/TLS")
+
+@enduml

@@ -1,0 +1,25 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for Ask IQ Chat
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- System Context (Ask IQ Chat)
+
+Person(user, "WorkbenchIQ User", "An underwriter or analyst who asks contextual questions about applications and policies.")
+
+System(workbenchiq, "WorkbenchIQ", "Web application providing document analysis, risk assessment, and an AI-powered chat assistant (Ask IQ) for contextual Q&A.")
+
+System_Ext(aoai, "Azure OpenAI Service", "Provides chat completions (GPT-4.1-mini) and embedding generation for RAG.")
+
+System_Ext(browser, "Web Browser", "Renders the Angular SPA with the Ask IQ chat drawer.")
+
+Rel(user, browser, "Interacts via")
+Rel(browser, workbenchiq, "HTTPS requests", "REST / JSON / SSE")
+Rel(workbenchiq, aoai, "Chat completions\nand embeddings", "HTTPS / REST")
+Rel(workbenchiq, browser, "Streaming tokens\nand structured responses")
+
+@enduml

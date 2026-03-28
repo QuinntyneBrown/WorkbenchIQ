@@ -1,0 +1,77 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for Admin Workbench
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Component Diagram (Admin Workbench)
+
+Person(admin, "Administrator")
+Person(analyst, "Analyst")
+
+Container_Boundary(angular, "Angular SPA") {
+  Component(topNav, "TopNavComponent", "Component", "Nav header with persona selector.")
+  Component(landing, "LandingPageComponent", "Component", "App list with upload.")
+  Component(adminShell, "AdminComponent", "Component", "Tab shell for admin tabs.")
+  Component(docsTab, "DocumentsTabComponent", "Component", "File upload and processing.")
+  Component(promptsTab, "PromptsTabComponent", "Component", "Prompt template editor.")
+  Component(analyzerTab, "AnalyzerTabComponent", "Component", "Analyzer management.")
+  Component(workbench, "WorkbenchComponent", "Component", "Three-panel analysis view.")
+  Component(docPreview, "DocumentPreviewComponent", "Component", "PDF/image viewer.")
+  Component(fieldsPanel, "ExtractedFieldsPanelComponent", "Component", "Extracted fields table.")
+  Component(resultsPanel, "AnalysisResultsPanelComponent", "Component", "LLM analysis outputs.")
+  Component(authGuard, "AuthGuard", "Guard", "Auth redirect.")
+  Component(ngDocSvc, "AdminDocumentService", "Service", "App CRUD HTTP client.")
+  Component(ngPromptSvc, "AdminPromptService", "Service", "Prompt CRUD HTTP client.")
+  Component(ngAnalyzerSvc, "AdminAnalyzerService", "Service", "Analyzer HTTP client.")
+}
+
+Container_Boundary(dotnet, "ASP.NET Core Backend") {
+  Component(promptsCtrl, "PromptsController", "ApiController", "Prompt CRUD endpoints.")
+  Component(analyzerCtrl, "AnalyzerController", "ApiController", "Analyzer management endpoints.")
+  Component(policiesCtrl, "PoliciesController", "ApiController", "Policy CRUD endpoints.")
+  Component(appsCtrl, "ApplicationsController", "ApiController", "Application endpoints.")
+  Component(promptSvc, "PromptService", "Service", "Prompt JSON read/write.")
+  Component(analyzerSvc, "AnalyzerService", "Service", "Azure CU analyzer lifecycle.")
+  Component(processSvc, "DocumentProcessingService", "Service", "Extraction and analysis pipeline.")
+}
+
+ContainerDb(promptStore, "Prompt Store", "JSON file", "prompts.json")
+ContainerDb(appStore, "App Store", "Blob / disk", "Documents & metadata")
+System_Ext(azureCU, "Azure Content Understanding", "Document extraction")
+System_Ext(llm, "Azure OpenAI", "LLM analysis")
+
+Rel(admin, topNav, "Navigates to admin")
+Rel(admin, adminShell, "Manages configuration")
+Rel(analyst, landing, "Selects application")
+Rel(analyst, workbench, "Reviews analysis")
+
+Rel(adminShell, docsTab, "Hosts tab")
+Rel(adminShell, promptsTab, "Hosts tab")
+Rel(adminShell, analyzerTab, "Hosts tab")
+Rel(workbench, docPreview, "Contains")
+Rel(workbench, fieldsPanel, "Contains")
+Rel(workbench, resultsPanel, "Contains")
+
+Rel(docsTab, ngDocSvc, "Upload & poll")
+Rel(promptsTab, ngPromptSvc, "CRUD prompts")
+Rel(analyzerTab, ngAnalyzerSvc, "Manage analyzers")
+
+Rel(ngPromptSvc, promptsCtrl, "HTTP", "JSON / HTTPS")
+Rel(ngAnalyzerSvc, analyzerCtrl, "HTTP", "JSON / HTTPS")
+Rel(ngDocSvc, appsCtrl, "HTTP", "JSON / HTTPS")
+
+Rel(promptsCtrl, promptSvc, "Delegates")
+Rel(analyzerCtrl, analyzerSvc, "Delegates")
+Rel(appsCtrl, processSvc, "Triggers processing")
+
+Rel(promptSvc, promptStore, "Reads / writes JSON")
+Rel(processSvc, appStore, "Reads / writes files")
+Rel(analyzerSvc, azureCU, "REST calls", "HTTPS")
+Rel(processSvc, azureCU, "Extracts documents", "HTTPS")
+Rel(processSvc, llm, "Sends analysis prompts", "HTTPS")
+
+@enduml

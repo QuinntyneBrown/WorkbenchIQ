@@ -1,0 +1,137 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Background Processing class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title Background Processing -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  enum ProcessingStatus {
+    Idle
+    Extracting
+    Analyzing
+    Error
+  }
+
+  enum ProcessingMode {
+    Auto
+    Standard
+    LargeDocument
+  }
+
+  enum ProcessingJobType {
+    ExtractOnly
+    AnalyzeOnly
+    ExtractAndAnalyze
+  }
+
+  class ProcessingJob <<Record>> {
+    +ApplicationId : string
+    +JobType : ProcessingJobType
+    +ProcessingMode : ProcessingMode?
+    +Sections : IReadOnlyList<string>?
+    +EnqueuedAt : DateTimeOffset
+  }
+
+  class ProcessingResult <<Record>> {
+    +ApplicationId : string
+    +Success : bool
+    +ErrorMessage : string?
+    +Duration : TimeSpan
+    +ProcessingMode : ProcessingMode
+  }
+
+  class BackgroundProcessingOptions <<Options>> {
+    +QueueCapacity : int
+    +AutoDetectMode : bool
+    +LargeDocThresholdKb : int
+    +MaxWorkersPerSection : int
+  }
+
+  interface IBackgroundTaskQueue {
+    +EnqueueAsync(job: ProcessingJob) : ValueTask
+    +DequeueAsync(token: CancellationToken) : ValueTask<ProcessingJob>
+  }
+
+  class BackgroundTaskQueue {
+    -_channel : Channel<ProcessingJob>
+    +EnqueueAsync(job: ProcessingJob) : ValueTask
+    +DequeueAsync(token: CancellationToken) : ValueTask<ProcessingJob>
+  }
+
+  interface IBackgroundProcessingService {
+    +ExecuteJobAsync(job: ProcessingJob, token: CancellationToken) : Task<ProcessingResult>
+    +ResetStatusAsync(applicationId: string) : Task
+  }
+
+  class BackgroundProcessingService {
+    -_extractionService : IExtractionService
+    -_analysisService : IAnalysisService
+    -_applicationRepository : IApplicationRepository
+    -_logger : ILogger<BackgroundProcessingService>
+    +ExecuteJobAsync(job: ProcessingJob, token: CancellationToken) : Task<ProcessingResult>
+    +ResetStatusAsync(applicationId: string) : Task
+  }
+
+  class BackgroundProcessingHostedService <<BackgroundService>> {
+    -_taskQueue : IBackgroundTaskQueue
+    -_serviceProvider : IServiceProvider
+    -_logger : ILogger
+    #ExecuteAsync(stoppingToken: CancellationToken) : Task
+  }
+
+  class ProcessingController <<ApiController>> {
+    -_taskQueue : IBackgroundTaskQueue
+    -_processingService : IBackgroundProcessingService
+    -_applicationRepository : IApplicationRepository
+    +Process(applicationId: string, processingMode: ProcessingMode?) : IActionResult
+    +Extract(applicationId: string, background: bool) : IActionResult
+    +Analyze(applicationId: string, request: AnalyzeRequest) : IActionResult
+    +ResetStatus(applicationId: string) : IActionResult
+  }
+
+  BackgroundTaskQueue ..|> IBackgroundTaskQueue
+  BackgroundProcessingService ..|> IBackgroundProcessingService
+  BackgroundProcessingHostedService --> IBackgroundTaskQueue : dequeues from
+  BackgroundProcessingHostedService --> IBackgroundProcessingService : delegates to
+  ProcessingController --> IBackgroundTaskQueue : enqueues to
+  ProcessingController --> IBackgroundProcessingService : resets via
+  BackgroundProcessingService --> ProcessingStatus : updates
+  BackgroundTaskQueue --> BackgroundProcessingOptions : reads capacity
+  ProcessingJob --> ProcessingJobType : has
+  ProcessingJob --> ProcessingMode : may specify
+  ProcessingResult --> ProcessingMode : reports
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class "ProcessingService\n(Angular)" as NgProcessingService <<Injectable>> {
+    -http : HttpClient
+    +startProcessing(applicationId: string, mode?: ProcessingMode) : Observable<ApplicationDto>
+    +resetStatus(applicationId: string) : Observable<void>
+    +pollStatus(applicationId: string, intervalMs?: number) : Observable<ApplicationDto>
+  }
+
+  class ProcessingStatusComponent <<Standalone>> {
+    +processingStatus : ProcessingStatus | null
+    +processingError : string | null
+    +onReset : EventEmitter<void>
+  }
+
+  class ProcessingProgressIndicatorComponent <<Standalone>> {
+    +status : ProcessingStatus | null
+  }
+
+  ProcessingStatusComponent --> NgProcessingService : injects
+  ProcessingProgressIndicatorComponent --> NgProcessingService : reads status
+}
+
+NgProcessingService --> ProcessingController : HTTP
+
+@enduml

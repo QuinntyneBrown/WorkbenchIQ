@@ -1,0 +1,106 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for Mortgage Underwriting
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+scale max 1024 width
+
+title WorkbenchIQ -- C4 Component Diagram (Mortgage Underwriting)
+
+' ──────────────────────────────────────────────
+'  Angular SPA
+' ──────────────────────────────────────────────
+Container_Boundary(spa, "Angular SPA") {
+
+    Component(workbench, "MortgageWorkbenchComponent", "Angular Component", "Main workspace.\nDocument upload zone, classified doc list,\nextracted fields, action toolbar,\nresults tabs.")
+
+    Component(calcPanel, "CalculationsPanelComponent", "Angular Component", "Income summary, loan details,\nGDS/TDS gauges, LTV indicator,\namortization schedule.")
+
+    Component(compPanel, "CompliancePanelComponent", "Angular Component", "B-20 checklist, guideline evaluations,\ncompliance score, violation list.")
+
+    Component(propModal, "PropertyDeepDiveModalComponent", "Angular Component", "Appraised value, market comparables,\ncondition assessment, market trend.")
+
+    Component(mortgageSvcNg, "MortgageService", "Injectable (HttpClient)", "Calls /api/mortgage/* endpoints.\nReturns typed Observables.")
+}
+
+' ──────────────────────────────────────────────
+'  .NET API
+' ──────────────────────────────────────────────
+Container_Boundary(api, "API Server (.NET 8)") {
+
+    Component(mortgageCtrl, "MortgageController", "ApiController", "POST /api/mortgage/upload\nPOST /api/mortgage/calculate\nPOST /api/mortgage/stress-test\nPOST /api/mortgage/compliance\nPOST /api/mortgage/risk\nGET  /api/mortgage/property/{id}/deep-dive\nPOST /api/mortgage/process")
+
+    Component(mortgageSvc, "MortgageService", "IMortgageService impl", "Orchestrates: classify, extract,\naggregate, calculate, stress test,\ncompliance, risk.")
+
+    Component(processor, "MortgageProcessor", "IMortgageProcessor impl", "Classifies documents by type.\nExtracts fields with provenance.\nNormalizes currency/dates.\nAggregates multi-document fields.")
+
+    Component(incomeCalc, "IncomeCalculator", "IIncomeCalculator impl", "Gross/net income calculation.\nEmployment type handling.\nIncome stability scoring.")
+
+    Component(loanCalc, "LoanCalculator", "ILoanCalculator impl", "Principal, amortization, rate.\nMonthly payment, total interest.\nGDS, TDS, LTV ratios.")
+
+    Component(propAnalyzer, "PropertyAnalyzer", "IPropertyAnalyzer impl", "Appraisal analysis, valuation.\nMarket comparables.\nCondition assessment.")
+
+    Component(stressTest, "StressTestService", "IStressTestService impl", "MQR determination (max of\ncontract+2% or 5.25% floor).\nStress-tested GDS/TDS.\nB-20 compliance verification.")
+
+    Component(policyEngine, "MortgagePolicyEngine", "IMortgagePolicyEngine impl", "OSFI B-20 rule evaluation.\nUnderwriting guidelines.\nCompliance scoring.")
+
+    Component(riskAnalyzer, "MortgageRiskAnalyzer", "IRiskAnalyzer impl", "Credit, income stability,\nLTV, amortization, and\nmarket risk assessment.")
+
+    Component(options, "MortgageUnderwritingOptions", "IOptions<T>", "GDS/TDS thresholds, LTV limits,\nMQR floor, amortization caps.\nLoaded from appsettings.json.")
+}
+
+' ──────────────────────────────────────────────
+'  External systems
+' ──────────────────────────────────────────────
+System_Ext(azure_cu, "Azure AI Content Understanding", "Document classification and field extraction")
+System_Ext(azure_openai, "Azure OpenAI", "GPT-4o analysis narratives")
+ContainerDb_Ext(cosmos, "Cosmos DB", "Application data and results")
+Container_Ext(blob, "Blob Storage", "Mortgage documents")
+
+' ──────────────────────────────────────────────
+'  Angular internal relationships
+' ──────────────────────────────────────────────
+Rel(workbench, mortgageSvcNg, "uploadDocuments(), processApplication()")
+Rel(workbench, calcPanel, "renders")
+Rel(workbench, compPanel, "renders")
+Rel(workbench, propModal, "opens")
+Rel(calcPanel, mortgageSvcNg, "calculate()")
+Rel(compPanel, mortgageSvcNg, "checkCompliance()")
+Rel(propModal, mortgageSvcNg, "getPropertyDeepDive()")
+
+' ──────────────────────────────────────────────
+'  Angular -> API
+' ──────────────────────────────────────────────
+Rel(mortgageSvcNg, mortgageCtrl, "HTTP", "JSON")
+
+' ──────────────────────────────────────────────
+'  API internal relationships
+' ──────────────────────────────────────────────
+Rel(mortgageCtrl, mortgageSvc, "ProcessApplicationAsync()")
+Rel(mortgageCtrl, processor, "ClassifyDocumentAsync()")
+Rel(mortgageCtrl, propAnalyzer, "AnalyzeAppraisalAsync()")
+
+Rel(mortgageSvc, processor, "classify, extract, aggregate")
+Rel(mortgageSvc, incomeCalc, "CalculateGrossIncomeAsync()")
+Rel(mortgageSvc, loanCalc, "Calculate(), GDS, TDS, LTV")
+Rel(mortgageSvc, stressTest, "RunStressTestAsync()")
+Rel(mortgageSvc, policyEngine, "EvaluateComplianceAsync()")
+Rel(mortgageSvc, riskAnalyzer, "AssessRiskAsync()")
+
+Rel(stressTest, options, "reads MQR floor, thresholds")
+Rel(policyEngine, options, "reads B-20 limits")
+Rel(loanCalc, options, "reads amortization caps")
+
+' ──────────────────────────────────────────────
+'  API -> External
+' ──────────────────────────────────────────────
+Rel(processor, azure_cu, "Classify and extract fields")
+Rel(propAnalyzer, azure_cu, "Extract appraisal fields")
+Rel(propAnalyzer, azure_openai, "Generate valuation narrative")
+Rel(riskAnalyzer, azure_openai, "Generate risk explanations")
+Rel(mortgageSvc, cosmos, "Read/write application data")
+Rel(mortgageSvc, blob, "Store/retrieve documents")
+
+@enduml

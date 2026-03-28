@@ -1,0 +1,55 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for Multimodal Claims Processing
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Component Diagram (Multimodal Claims Processing)
+
+Person(adjuster, "Claims Adjuster")
+
+Container_Boundary(angular, "Angular SPA") {
+  Component(overviewComp, "ClaimsOverviewComponent", "Standalone Component", "Lists claims with status badges and assessment highlights.")
+  Component(damageComp, "DamageViewerComponent", "Standalone Component", "Annotated photos with bounding boxes, severity color coding, pan and zoom.")
+  Component(videoComp, "VideoTimelineComponent", "Standalone Component", "Horizontal keyframe timeline with scrubbing and event metadata.")
+  Component(summaryComp, "ClaimsSummaryComponent", "Standalone Component", "Dashboard showing damage, liability, fraud, and payout results.")
+  Component(ngClaimsSvc, "ClaimsService", "Injectable Service", "HTTP client for claims API. Receives SignalR progress updates.")
+}
+
+Container_Boundary(dotnet, "ASP.NET Core Backend") {
+  Component(claimsCtrl, "ClaimsController", "ApiController", "POST /api/claims/submit, GET /api/claims/{id}, GET /api/claims/{id}/media.")
+  Component(claimsSvc, "ClaimsService", "IClaimsService impl", "Orchestrates submission, processing, aggregation, and assessment workflows.")
+  Component(processor, "MultimodalProcessor", "IMultimodalProcessor impl", "Parallel extraction with bounded concurrency and Polly retry.")
+  Component(router, "MediaRouter", "IMediaRouter impl", "Validates file size and MIME type. Routes to correct extractor with fallback.")
+  Component(docEx, "DocumentExtractor", "IDocumentExtractor impl", "Extracts text, tables, and structured fields from PDF and DOCX.")
+  Component(imgEx, "ImageExtractor", "IImageExtractor impl", "Detects damage areas, bounding boxes, and severity from images.")
+  Component(vidEx, "VideoExtractor", "IVideoExtractor impl", "Extracts keyframes and timeline events from video files.")
+  Component(aggregator, "ResultAggregator", "IResultAggregator impl", "Merges extraction results, resolves conflicts via confidence scoring.")
+  Component(engine, "ClaimsEngine", "IClaimsEngine impl", "Produces ClaimAssessment: damage, liability, fraud, payout, policy analysis.")
+  Component(mediaRepo, "MediaRepository", "IMediaRepository impl", "Blob storage integration and EF Core status tracking.")
+  Component(hub, "ClaimsProgressHub", "SignalR Hub", "Pushes ProcessingProgress events to connected Angular clients.")
+}
+
+Rel(adjuster, overviewComp, "Browses claims")
+Rel(overviewComp, ngClaimsSvc, "getClaim()")
+Rel(damageComp, ngClaimsSvc, "getClaimMedia()")
+Rel(videoComp, ngClaimsSvc, "getClaimMedia()")
+Rel(summaryComp, ngClaimsSvc, "getClaim()")
+Rel(ngClaimsSvc, claimsCtrl, "HTTP requests", "JSON / HTTPS")
+Rel(ngClaimsSvc, hub, "SignalR", "WebSocket")
+
+Rel(claimsCtrl, claimsSvc, "Delegates operations")
+Rel(claimsSvc, processor, "ProcessClaimMediaAsync()")
+Rel(claimsSvc, aggregator, "AggregateAsync()")
+Rel(claimsSvc, engine, "AssessAsync()")
+Rel(claimsSvc, mediaRepo, "Store and retrieve media")
+Rel(processor, router, "RouteAsync() per file")
+Rel(processor, hub, "Reports progress")
+Rel(router, docEx, "Documents")
+Rel(router, imgEx, "Images")
+Rel(router, vidEx, "Videos")
+
+@enduml

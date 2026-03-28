@@ -1,0 +1,141 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Large Document Processing class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title Large Document Processing -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  enum ProcessingMode {
+    Standard
+    LargeDocument
+  }
+
+  class ProcessingOptions <<Options>> {
+    +LargeDocThresholdKb : int
+    +ChunkSizeChars : int
+    +MaxSamplePages : int
+    +CondensedContextMaxChars : int
+    +PagesPerBatch : int
+    +DelayBetweenBatchesMs : int
+    +MaxContentPerPageChars : int
+    +MaxCharsPerBatchPage : int
+  }
+
+  class DocumentPage <<Record>> {
+    +Number : int
+    +Content : string
+    +File : string
+  }
+
+  class DocumentStats <<Record>> {
+    +SizeBytes : long
+    +SizeKb : double
+    +SizeMb : double
+    +PageCount : int
+    +EstimatedTokens : int
+    +LineCount : int
+  }
+
+  class BatchSummary <<Record>> {
+    +BatchNum : int
+    +PageStart : int
+    +PageEnd : int
+    +PageCount : int
+    +Summary : string
+  }
+
+  class CondensedContextResult <<Record>> {
+    +CondensedContext : string
+    +BatchSummaries : IReadOnlyList<BatchSummary>?
+    +Stats : DocumentStats
+    +Mode : ProcessingMode
+  }
+
+  class LargeDocumentPromptOptions <<Options>> {
+    +SystemMessages : Dictionary<string, string>
+    +Prompts : Dictionary<string, PromptTemplate>
+    +Categories : string[]
+  }
+
+  interface ILargeDocumentProcessor {
+    +DetectProcessingMode(documentMarkdown: string) : ProcessingMode
+    +GetDocumentStats(documentMarkdown: string) : DocumentStats
+    +BuildCondensedContextAsync(documentMarkdown: string, cuResult: Dictionary?, useProgressive: bool) : Task<CondensedContextResult>
+  }
+
+  class LargeDocumentProcessor {
+    -_options : ProcessingOptions
+    -_chunker : DocumentChunker
+    -_summarizer : ProgressiveSummarizer
+    -_logger : ILogger<LargeDocumentProcessor>
+    +DetectProcessingMode(documentMarkdown: string) : ProcessingMode
+    +GetDocumentStats(documentMarkdown: string) : DocumentStats
+    +BuildCondensedContextAsync(documentMarkdown: string, cuResult: Dictionary?, useProgressive: bool) : Task<CondensedContextResult>
+  }
+
+  class DocumentChunker {
+    -_options : ProcessingOptions
+    +ExtractPages(markdown: string) : IReadOnlyList<DocumentPage>
+    +SelectKeyPages(pages: IReadOnlyList<DocumentPage>, maxPages: int, firstPages: int) : IReadOnlyList<DocumentPage>
+    +CreateBatches(pages: IReadOnlyList<DocumentPage>, pagesPerBatch: int) : IReadOnlyList<IReadOnlyList<DocumentPage>>
+  }
+
+  class ProgressiveSummarizer {
+    -_options : ProcessingOptions
+    -_promptOptions : LargeDocumentPromptOptions
+    -_llmClient : ILlmClient
+    -_logger : ILogger<ProgressiveSummarizer>
+    +SummarizePagesAsync(pages: IReadOnlyList<DocumentPage>) : Task<string>
+    +SummarizeBatchAsync(pages: IReadOnlyList<DocumentPage>, batchNum: int, totalBatches: int) : Task<string>
+    +SummarizeProgressivelyAsync(pages: IReadOnlyList<DocumentPage>) : Task<(string, IReadOnlyList<BatchSummary>)>
+    +ConsolidateAsync(combinedSummaries: string) : Task<string>
+  }
+
+  LargeDocumentProcessor ..|> ILargeDocumentProcessor
+  LargeDocumentProcessor --> DocumentChunker : uses
+  LargeDocumentProcessor --> ProgressiveSummarizer : uses
+  LargeDocumentProcessor --> ProcessingOptions : reads
+  DocumentChunker --> ProcessingOptions : reads
+  DocumentChunker ..> DocumentPage : produces
+  ProgressiveSummarizer --> ProcessingOptions : reads
+  ProgressiveSummarizer --> LargeDocumentPromptOptions : reads
+  ProgressiveSummarizer ..> BatchSummary : produces
+  LargeDocumentProcessor ..> CondensedContextResult : returns
+  CondensedContextResult --> ProcessingMode
+  CondensedContextResult --> DocumentStats
+  CondensedContextResult --> BatchSummary
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class "LargeDocumentService" as NgLargeDocSvc <<Injectable>> {
+    +isLargeDocument$ : Signal<boolean>
+    +condensedContext$ : Signal<string | null>
+    +batchSummaries$ : Signal<BatchSummary[]>
+    +documentStats$ : Signal<DocumentStats | null>
+  }
+
+  class LargeDocumentBannerComponent <<Standalone>> {
+    +stats : DocumentStats
+    +compressionRatio : number
+  }
+
+  class BatchSummaryPanelComponent <<Standalone>> {
+    +summaries : BatchSummary[]
+    +expanded : boolean
+  }
+
+  LargeDocumentBannerComponent --> NgLargeDocSvc : injects
+  BatchSummaryPanelComponent --> NgLargeDocSvc : injects
+}
+
+NgLargeDocSvc --> ILargeDocumentProcessor : HTTP
+
+@enduml

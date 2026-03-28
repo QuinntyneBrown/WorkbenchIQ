@@ -1,0 +1,30 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for Mortgage Underwriting
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- C4 Context Diagram (Mortgage Underwriting)
+
+Person(underwriter, "Mortgage Underwriter", "Reviews mortgage applications, uploads supporting documents, evaluates calculations, compliance, and risk.")
+Person(admin, "Administrator", "Configures underwriting guidelines, regulatory thresholds, and document analyzers.")
+
+System(workbenchiq, "WorkbenchIQ", "Web application for mortgage underwriting workflows.\nBuilt with .NET 8 + Angular 17+.\nClassifies documents, calculates ratios, runs OSFI B-20 stress tests, evaluates compliance, and assesses risk.")
+
+System_Ext(contentUnderstanding, "Azure AI Content Understanding", "Classifies mortgage documents (T4, pay stubs, appraisals, etc.) and extracts fields with confidence scores.")
+System_Ext(azureOpenAI, "Azure OpenAI Service", "GPT-4o for property analysis narrative generation, risk factor explanation, and compliance reasoning.")
+System_Ext(storage, "Azure Blob Storage", "Stores uploaded mortgage documents, appraisal reports, and processing results.")
+System_Ext(cosmos, "Azure Cosmos DB", "Persists mortgage applications, extracted fields, calculations, and underwriting decisions.")
+
+Rel(underwriter, workbenchiq, "Uploads documents, reviews underwriting results", "HTTPS")
+Rel(admin, workbenchiq, "Configures thresholds and guidelines", "HTTPS / appsettings")
+Rel(workbenchiq, contentUnderstanding, "Classifies and extracts document fields", "HTTPS (Azure SDK)")
+Rel(workbenchiq, azureOpenAI, "Generates analysis narratives", "HTTPS (Azure SDK)")
+Rel(workbenchiq, storage, "Stores and retrieves documents", "HTTPS (Azure SDK)")
+Rel(workbenchiq, cosmos, "Reads/writes application data", "HTTPS (Azure SDK)")
+
+@enduml

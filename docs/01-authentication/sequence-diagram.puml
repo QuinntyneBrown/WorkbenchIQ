@@ -1,0 +1,91 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Authentication sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+
+title Authentication & Authorization -- Sequence Diagram
+
+actor User
+participant "Angular\nLoginComponent" as Login
+participant "Angular\nAuthService" as NgAuth
+participant "Angular\nAuthGuard" as Guard
+participant "ASP.NET Core\nApiKeyMiddleware" as MW
+participant "ASP.NET Core\nAuthController" as Ctrl
+participant "ASP.NET Core\nAuthService" as Svc
+
+== App Initialization -- Auth Check ==
+
+User -> Login : Navigate to app
+Login -> NgAuth : checkAuth()
+NgAuth -> MW : GET /api/auth/check
+MW -> MW : Path whitelisted?\nYes -- skip API key check
+MW -> Ctrl : forward request
+Ctrl -> Svc : ValidateSessionToken(cookie)
+alt Valid session
+  Svc --> Ctrl : username
+  Ctrl --> NgAuth : 200 { authenticated: true, username }
+  NgAuth --> Guard : isAuthenticated$ = true
+  Guard --> User : Allow route
+else No session or expired
+  Svc --> Ctrl : null
+  Ctrl --> NgAuth : 401 { authenticated: false }
+  NgAuth --> Guard : isAuthenticated$ = false
+  Guard --> User : Redirect to /login
+end
+
+== Login Flow ==
+
+User -> Login : Enter credentials & submit
+Login -> NgAuth : login(username, password)
+NgAuth -> MW : POST /api/auth/login
+MW -> MW : Path whitelisted?\nYes -- skip API key check
+MW -> Ctrl : forward request
+Ctrl -> Svc : ValidateCredentials(username, password)
+alt Valid credentials
+  Svc --> Ctrl : true
+  Ctrl -> Svc : CreateSessionToken(username)
+  Svc --> Ctrl : token string
+  Ctrl --> NgAuth : 200 { username }\n+ Set-Cookie: session=<token>
+  NgAuth -> NgAuth : isAuthenticated$ = true
+  NgAuth --> Login : success
+  Login --> User : Redirect to /
+else Invalid credentials
+  Svc --> Ctrl : false
+  Ctrl --> NgAuth : 401 { error }
+  NgAuth --> Login : error
+  Login --> User : Show error message
+end
+
+== Authenticated API Request -- API Key Validation ==
+
+User -> NgAuth : Trigger data fetch
+NgAuth -> MW : GET /api/some-resource\n+ X-API-Key header
+alt API key configured
+  MW -> MW : FixedTimeEquals(header, expected)
+  alt Key matches
+    MW -> Ctrl : forward request
+    Ctrl --> NgAuth : 200 response
+  else Key mismatch or missing
+    MW --> NgAuth : 401 Unauthorized
+    NgAuth -> NgAuth : AuthInterceptor catches 401
+    NgAuth --> User : Redirect to /login
+  end
+else Dev mode (no key configured)
+  MW -> Ctrl : forward request (bypass)
+  Ctrl --> NgAuth : 200 response
+end
+
+== Logout Flow ==
+
+User -> Login : Click logout
+Login -> NgAuth : logout()
+NgAuth -> MW : POST /api/auth/logout
+MW -> Ctrl : forward request
+Ctrl --> NgAuth : 200 { success }\n+ Clear session cookie
+NgAuth -> NgAuth : isAuthenticated$ = false
+NgAuth --> User : Redirect to /login
+
+@enduml

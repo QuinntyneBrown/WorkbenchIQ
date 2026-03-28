@@ -1,0 +1,199 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Policy Management class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title Policy Management -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  enum FindingSeverity {
+    Pass
+    Info
+    Warning
+    Fail
+  }
+
+  class Policy <<Entity>> {
+    +Id : string
+    +Name : string
+    +Category : string
+    +Subcategory : string
+    +Description : string
+    +Criteria : List<PolicyCriteria>
+    +ModifyingFactors : List<ModifyingFactor>
+    +References : List<string>
+  }
+
+  class PolicyCriteria <<ValueObject>> {
+    +Id : string
+    +Condition : string
+    +RiskLevel : string
+    +Action : string
+    +Rationale : string
+  }
+
+  class ModifyingFactor <<ValueObject>> {
+    +Factor : string
+    +Impact : string
+  }
+
+  class PolicySet <<ValueObject>> {
+    +Version : string
+    +EffectiveDate : string
+    +Description : string
+    +Policies : List<Policy>
+    +PlanBenefits : Dictionary<string, object>?
+  }
+
+  class PolicyFinding <<ValueObject>> {
+    +RuleId : string
+    +Severity : FindingSeverity
+    +Category : string
+    +Message : string
+    +Evidence : Dictionary<string, object>
+    +Remediation : string?
+  }
+
+  class PolicyRecommendation <<ValueObject>> {
+    +Decision : string
+    +Confidence : double
+    +Reasons : List<string>
+    +Conditions : List<string>
+    +FindingsSummary : Dictionary<string, int>
+  }
+
+  class PolicyEvaluationResult <<ValueObject>> {
+    +Findings : List<PolicyFinding>
+    +Recommendation : PolicyRecommendation
+    +EvaluatedAt : DateTimeOffset
+    +PolicyIdsApplied : List<string>
+  }
+
+  interface IPolicyRepository {
+    +GetAllAsync(persona: string) : Task<PolicySet>
+    +GetByIdAsync(persona: string, policyId: string) : Task<Policy?>
+    +GetByCategoryAsync(persona: string, category: string) : Task<List<Policy>>
+    +AddAsync(persona: string, policy: Policy) : Task<Policy>
+    +UpdateAsync(persona: string, policyId: string, policy: Policy) : Task<Policy>
+    +DeleteAsync(persona: string, policyId: string) : Task
+    +InvalidateCacheAsync(persona: string) : Task
+  }
+
+  class PolicyRepository {
+    -_cache : IMemoryCache
+    -_storageRoot : string
+    -_personaFileMap : Dictionary<string, string>
+    +GetAllAsync(persona: string) : Task<PolicySet>
+    +GetByIdAsync(persona: string, policyId: string) : Task<Policy?>
+    +GetByCategoryAsync(persona: string, category: string) : Task<List<Policy>>
+    +AddAsync(persona: string, policy: Policy) : Task<Policy>
+    +UpdateAsync(persona: string, policyId: string, policy: Policy) : Task<Policy>
+    +DeleteAsync(persona: string, policyId: string) : Task
+    +InvalidateCacheAsync(persona: string) : Task
+  }
+
+  interface IPolicyService {
+    +GetPoliciesAsync(persona: string) : Task<List<Policy>>
+    +GetPolicyAsync(persona: string, policyId: string) : Task<Policy?>
+    +GetPoliciesByCategoryAsync(persona: string, category: string) : Task<List<Policy>>
+    +CreatePolicyAsync(persona: string, policy: Policy) : Task<Policy>
+    +UpdatePolicyAsync(persona: string, policyId: string, policy: Policy) : Task<Policy>
+    +DeletePolicyAsync(persona: string, policyId: string) : Task
+    +FormatForPromptAsync(persona: string, documentText: string?, maxPolicies: int) : Task<string>
+    +ValidateCitationAsync(persona: string, policyId: string, criteriaId: string?) : Task<CitationValidationResult>
+    +MatchPoliciesAsync(persona: string, conditions: List<string>) : Task<List<Policy>>
+  }
+
+  class PolicyService {
+    -_repository : IPolicyRepository
+    -_engine : IPolicyEngine
+    -_logger : ILogger<PolicyService>
+  }
+
+  interface IPolicyEngine {
+    +EvaluateAsync(caseData: Dictionary<string, object>, policies: List<Policy>) : Task<PolicyEvaluationResult>
+    +GenerateRecommendationAsync(findings: List<PolicyFinding>) : Task<PolicyRecommendation>
+  }
+
+  class PolicyEngine {
+    -_logger : ILogger<PolicyEngine>
+    +EvaluateAsync(caseData: Dictionary<string, object>, policies: List<Policy>) : Task<PolicyEvaluationResult>
+    +GenerateRecommendationAsync(findings: List<PolicyFinding>) : Task<PolicyRecommendation>
+  }
+
+  class PoliciesController <<ApiController>> {
+    -_policyService : IPolicyService
+    +GetAll(persona: string) : Task<IActionResult>
+    +GetById(policyId: string) : Task<IActionResult>
+    +GetByCategory(category: string) : Task<IActionResult>
+    +Create(request: CreatePolicyRequest) : Task<IActionResult>
+    +Update(policyId: string, request: UpdatePolicyRequest) : Task<IActionResult>
+    +Delete(policyId: string) : Task<IActionResult>
+    +Evaluate(request: EvaluateRequest) : Task<IActionResult>
+  }
+
+  Policy *-- "0..*" PolicyCriteria
+  Policy *-- "0..*" ModifyingFactor
+  PolicySet o-- "0..*" Policy
+  PolicyEvaluationResult *-- "0..*" PolicyFinding
+  PolicyEvaluationResult *-- "1" PolicyRecommendation
+  PolicyFinding --> FindingSeverity
+
+  PolicyRepository ..|> IPolicyRepository
+  PolicyService ..|> IPolicyService
+  PolicyEngine ..|> IPolicyEngine
+
+  PolicyService --> IPolicyRepository : uses
+  PolicyService --> IPolicyEngine : uses
+  PoliciesController --> IPolicyService : uses
+  PolicyRepository --> PolicySet : reads/writes
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class "PolicyService\n(Angular)" as NgPolicyService <<Injectable>> {
+    -http : HttpClient
+    +getPolicies(persona: string) : Observable<Policy[]>
+    +getPolicy(policyId: string) : Observable<Policy>
+    +getPoliciesByCategory(category: string) : Observable<Policy[]>
+    +createPolicy(policy: Policy) : Observable<Policy>
+    +updatePolicy(policyId: string, policy: Policy) : Observable<Policy>
+    +deletePolicy(policyId: string) : Observable<void>
+    +evaluateCase(caseData: any) : Observable<PolicyEvaluationResult>
+  }
+
+  class PolicyListComponent <<Standalone>> {
+    -policyService : PolicyService
+    -router : Router
+    +policies : Policy[]
+    +categoryFilter : string
+    +onCategoryChange(category: string) : void
+    +onPolicySelect(policyId: string) : void
+    +onCreateNew() : void
+  }
+
+  class PolicyEditorComponent <<Standalone>> {
+    -policyService : PolicyService
+    -route : ActivatedRoute
+    -router : Router
+    +policyForm : FormGroup
+    +isEditMode : boolean
+    +onSave() : void
+    +onDelete() : void
+    +addCriteria() : void
+    +removeCriteria(index: number) : void
+  }
+
+  PolicyListComponent --> NgPolicyService : injects
+  PolicyEditorComponent --> NgPolicyService : injects
+}
+
+NgPolicyService --> PoliciesController : HTTP
+
+@enduml

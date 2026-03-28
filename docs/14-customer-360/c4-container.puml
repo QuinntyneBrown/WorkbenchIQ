@@ -1,0 +1,27 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for Customer 360
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Container Diagram (Customer 360)
+
+Person(operator, "Operator", "Reviews unified customer profiles and cross-persona risk insights.")
+
+System_Boundary(sys, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Single-page application with customer list, detail view, journey timeline, persona summary cards, and risk correlation banners.")
+  Container(api, "Backend API", "ASP.NET Core 8, C#", "Hosts REST endpoints for listing customers, retrieving Customer 360 views, and managing customer profiles.")
+  ContainerDb(localfs, "Local File Storage", "JSON files on disk", "Stores customer profiles, journey events, and risk correlations under {storage_root}/customers/.")
+}
+
+System_Ext(azblob, "Azure Blob Storage", "Cloud storage used in production. Mirrors the local file layout as blob prefixes.")
+
+Rel(operator, spa, "Uses", "HTTPS")
+Rel(spa, api, "REST calls", "JSON over HTTPS")
+Rel(api, localfs, "Reads / writes customer JSON", "System.IO")
+Rel(api, azblob, "Reads / writes customer blobs", "Azure.Storage.Blobs SDK")
+
+@enduml

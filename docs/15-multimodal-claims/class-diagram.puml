@@ -1,0 +1,185 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Multimodal Claims Processing class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title Multimodal Claims Processing -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  class ClaimsController <<ApiController>> {
+    -_claimsService : IClaimsService
+    +Submit(files: IFormFile[], metadata: ClaimMetadata) : IActionResult
+    +GetClaim(claimId: Guid) : IActionResult
+    +GetClaimMedia(claimId: Guid) : IActionResult
+  }
+
+  interface IClaimsService {
+    +SubmitClaimAsync(files, metadata, CancellationToken) : Task<ClaimSubmission>
+    +GetClaimAsync(claimId: Guid, CancellationToken) : Task<Claim?>
+    +GetClaimMediaAsync(claimId: Guid, CancellationToken) : Task<IReadOnlyList<MediaFile>>
+  }
+
+  class ClaimsService {
+    -_processor : IMultimodalProcessor
+    -_engine : IClaimsEngine
+    -_aggregator : IResultAggregator
+    -_repository : IMediaRepository
+  }
+
+  interface IMultimodalProcessor {
+    +ProcessClaimMediaAsync(claimId, files, progress?, CancellationToken) : Task<IReadOnlyList<ExtractionResult>>
+  }
+
+  class MultimodalProcessor {
+    -_router : IMediaRouter
+    -_options : MultimodalProcessorOptions
+    -_retryPolicy : AsyncRetryPolicy
+  }
+
+  class MultimodalProcessorOptions <<Options>> {
+    +MaxConcurrency : int
+    +MaxRetryCount : int
+    +RetryBaseDelayMs : int
+  }
+
+  interface IMediaRouter {
+    +RouteAsync(file: MediaFile, CancellationToken) : Task<ExtractionResult>
+  }
+
+  class MediaRouter {
+    -_documentExtractor : IDocumentExtractor
+    -_imageExtractor : IImageExtractor
+    -_videoExtractor : IVideoExtractor
+    -_options : MediaRouterOptions
+  }
+
+  interface IDocumentExtractor {
+    +ExtractAsync(file: MediaFile, CancellationToken) : Task<DocumentExtractionResult>
+  }
+
+  interface IImageExtractor {
+    +ExtractAsync(file: MediaFile, CancellationToken) : Task<ImageExtractionResult>
+  }
+
+  interface IVideoExtractor {
+    +ExtractAsync(file: MediaFile, CancellationToken) : Task<VideoExtractionResult>
+  }
+
+  interface IResultAggregator {
+    +AggregateAsync(results: IReadOnlyList<ExtractionResult>, CancellationToken) : Task<AggregatedClaimData>
+  }
+
+  class ResultAggregator
+
+  interface IClaimsEngine {
+    +AssessAsync(data: AggregatedClaimData, CancellationToken) : Task<ClaimAssessment>
+  }
+
+  class ClaimsEngine
+
+  interface IMediaRepository {
+    +StoreAsync(claimId, file, CancellationToken) : Task<MediaFile>
+    +GetByClaimIdAsync(claimId, CancellationToken) : Task<IReadOnlyList<MediaFile>>
+    +UpdateStatusAsync(fileId, status, CancellationToken) : Task
+  }
+
+  class ClaimAssessment <<Record>> {
+    +ClaimId : Guid
+    +DamageAssessment : DamageAssessment
+    +LiabilityAssessment : LiabilityAssessment
+    +FraudDetection : FraudDetection
+    +PayoutRecommendation : PayoutRecommendation
+    +OverallConfidence : double
+    +AssessedAt : DateTimeOffset
+  }
+
+  class DamageArea <<Record>> {
+    +Label : string
+    +BoundingBox : BoundingBox
+    +Severity : SeverityLevel
+    +Confidence : double
+  }
+
+  class LiabilityAssessment <<Record>> {
+    +LiabilityPercentage : double
+    +Determination : string
+    +ContributingFactors : string[]
+    +Confidence : double
+  }
+
+  class FraudDetection <<Record>> {
+    +RiskScore : double
+    +Indicators : FraudIndicator[]
+    +Recommendation : string
+  }
+
+  class PayoutRecommendation <<Record>> {
+    +RecommendedAmount : decimal
+    +MinAmount : decimal
+    +MaxAmount : decimal
+    +Justification : string
+  }
+
+  ClaimsService ..|> IClaimsService
+  MultimodalProcessor ..|> IMultimodalProcessor
+  MediaRouter ..|> IMediaRouter
+  ResultAggregator ..|> IResultAggregator
+  ClaimsEngine ..|> IClaimsEngine
+
+  ClaimsController --> IClaimsService : uses
+  ClaimsService --> IMultimodalProcessor : uses
+  ClaimsService --> IClaimsEngine : uses
+  ClaimsService --> IResultAggregator : uses
+  ClaimsService --> IMediaRepository : uses
+  MultimodalProcessor --> IMediaRouter : uses
+  MultimodalProcessor --> MultimodalProcessorOptions : reads
+  MediaRouter --> IDocumentExtractor : routes to
+  MediaRouter --> IImageExtractor : routes to
+  MediaRouter --> IVideoExtractor : routes to
+  ClaimsEngine ..> ClaimAssessment : produces
+  ClaimAssessment *-- LiabilityAssessment
+  ClaimAssessment *-- FraudDetection
+  ClaimAssessment *-- PayoutRecommendation
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class "ClaimsService\n(Angular)" as NgClaimsService <<Injectable>> {
+    -http : HttpClient
+    +submitClaim(formData: FormData) : Observable<ClaimSubmission>
+    +getClaim(claimId: string) : Observable<Claim>
+    +getClaimMedia(claimId: string) : Observable<MediaFile[]>
+    +processingProgress$ : Observable<ProcessingProgress>
+  }
+
+  class ClaimsOverviewComponent <<Standalone>> {
+    +claims : Claim[]
+    +onSelectClaim(claimId: string) : void
+  }
+
+  class DamageViewerComponent <<Standalone>> {
+    +damageAreas : DamageArea[]
+    +selectedImage : MediaFile
+    +onAreaSelect(area: DamageArea) : void
+  }
+
+  class VideoTimelineComponent <<Standalone>> {
+    +keyFrames : KeyFrame[]
+    +timelineEvents : TimelineEvent[]
+    +onScrub(timestamp: number) : void
+  }
+
+  ClaimsOverviewComponent --> NgClaimsService : injects
+  DamageViewerComponent --> NgClaimsService : injects
+  VideoTimelineComponent --> NgClaimsService : injects
+}
+
+NgClaimsService --> ClaimsController : HTTP / SignalR
+
+@enduml

@@ -1,0 +1,38 @@
+@startuml c4-container
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+scale max 1024 width
+
+title WorkbenchIQ -- C4 Container Diagram (Configuration & Settings)
+
+Person(operator, "Operator / Admin", "Manages configuration.")
+Person(endUser, "End User", "Interacts with the application.")
+
+System_Boundary(wb, "WorkbenchIQ") {
+
+    Container(angularApp, "Angular SPA", "Angular 17+, TypeScript", "Single-page application. Reads build-time environment.ts and runtime config from backend.")
+
+    Container(dotnetApi, ".NET Web API", "ASP.NET Core 8, C#", "REST API host. Loads configuration via ConfigurationBuilder and exposes IOptions<T> to services.")
+
+    ContainerDb(configFiles, "Config Files", "appsettings.json", "Default and per-environment configuration files shipped with the deployment.")
+}
+
+System_Ext(azureKeyVault, "Azure Key Vault", "Secret storage.")
+System_Ext(azureAppConfig, "Azure App Configuration", "Centralised config & feature flags.")
+System_Ext(postgresql, "PostgreSQL", "Relational database.")
+System_Ext(azureOpenAI, "Azure OpenAI", "LLM service.")
+System_Ext(azureCU, "Azure Content Understanding", "Document analysis.")
+
+Rel(endUser, angularApp, "Uses", "HTTPS")
+Rel(operator, dotnetApi, "Sets config", "env vars / Azure Portal")
+
+Rel(angularApp, dotnetApi, "GET /api/config/client", "HTTPS / JSON")
+
+Rel(dotnetApi, configFiles, "Reads at startup")
+Rel(dotnetApi, azureKeyVault, "Reads secrets", "HTTPS / Managed Identity")
+Rel(dotnetApi, azureAppConfig, "Reads config", "HTTPS / Managed Identity")
+Rel(dotnetApi, postgresql, "Connects using DatabaseOptions", "TCP/TLS")
+Rel(dotnetApi, azureOpenAI, "Calls using OpenAIOptions", "HTTPS")
+Rel(dotnetApi, azureCU, "Calls using ContentUnderstandingOptions", "HTTPS")
+
+@enduml

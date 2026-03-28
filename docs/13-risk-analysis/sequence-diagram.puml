@@ -1,0 +1,109 @@
+@startuml sequence-diagram
+scale max 1024 width
+skinparam defaultFontSize 10
+skinparam sequenceMessageAlign center
+
+title Risk Analysis & Deep-Dive -- Sequence Diagram (.NET 8 / Angular 17+)
+
+actor Underwriter as user
+participant "Angular SPA" as spa
+participant "RiskAnalysisController" as ctrl
+participant "IRiskAnalysisService" as riskSvc
+participant "IDeepDiveService" as ddSvc
+participant "IPolicyRepository" as policyRepo
+participant "IGlossaryService" as glossary
+participant "ILlmClient" as llm
+participant "IApplicationRepository" as appRepo
+
+== Risk Analysis Flow ==
+
+user -> spa : Click "Run Risk Analysis"
+spa -> ctrl : POST /api/applications/{id}/risk-analysis
+ctrl -> appRepo : GetAsync(applicationId)
+ctrl -> ctrl : Set processing_status = "analyzing"
+ctrl --> spa : 202 Accepted
+
+ctrl -> riskSvc : RunAsync(applicationId, ct)
+activate riskSvc
+
+riskSvc -> appRepo : GetAsync(applicationId)
+note right : Verify LlmOutputs exist
+
+riskSvc -> policyRepo : GetFormattedPoliciesAsync()
+note right : Load all underwriting\npolicies as formatted text
+
+riskSvc -> glossary : FormatForPromptAsync("underwriting")
+note right : Append medical\nterminology glossary
+
+riskSvc -> riskSvc : Build application data summary\nfrom LLM output subsections\n(JSON per subsection)
+
+riskSvc -> riskSvc : Append truncated document\nmarkdown (max 6000 chars)
+
+riskSvc -> riskSvc : Fill prompt template\n{underwriting_policies}\n{application_data}
+
+riskSvc -> llm : ChatCompletionAsync(\n  system: "expert underwriter",\n  user: filled prompt,\n  maxTokens: 3000)
+llm --> riskSvc : JSON response
+
+riskSvc -> riskSvc : Strip code fences,\nparse to RiskAssessment
+
+riskSvc -> appRepo : SaveRiskAnalysisAsync(\n  RiskAssessment)
+riskSvc -> appRepo : ClearProcessingStatus()
+
+deactivate riskSvc
+
+spa -> ctrl : GET /api/applications/{id}/risk-analysis
+ctrl -> riskSvc : GetAsync(applicationId)
+ctrl --> spa : 200 RiskAssessment
+
+spa -> user : Display findings, citations,\npremium recommendation
+
+== Deep-Dive Flow ==
+
+user -> spa : Open Deep-Dive modal\nor click "Run Deep Dive"
+spa -> ctrl : POST /api/applications/{id}/deep-dive?force=true
+ctrl -> appRepo : GetAsync(applicationId)
+ctrl -> ctrl : Set processing_status = "analyzing"
+ctrl --> spa : 202 Accepted
+
+ctrl -> ddSvc : RunAsync(applicationId, force, ct)
+activate ddSvc
+
+ddSvc -> appRepo : GetAsync(applicationId)
+
+alt Large document with batch summaries
+  ddSvc -> ddSvc : Route deep-dive subsections\nto batch-summaries context
+else Standard document
+  ddSvc -> ddSvc : Use condensed document\nmarkdown as context
+end
+
+loop For each subsection: body_system_review, pending_investigations, last_office_visit, abnormal_labs, latest_vitals
+  ddSvc -> llm : ChatCompletionAsync(\n  subsection prompt,\n  document context)
+  llm --> ddSvc : Structured JSON
+  ddSvc -> ddSvc : Parse subsection output
+end
+
+ddSvc -> appRepo : SaveLlmOutputsAsync(\n  merged subsection results)
+ddSvc -> appRepo : ClearProcessingStatus()
+
+deactivate ddSvc
+
+spa -> ctrl : GET /api/applications/{id}/deep-dive
+ctrl -> ddSvc : GetAsync(applicationId)
+ctrl --> spa : 200 DeepDiveResult
+
+spa -> user : Render BodyDiagramComponent\n+ detail cards
+
+== Body Diagram Interaction ==
+
+user -> spa : Click body region (e.g. Chest)
+spa -> spa : BodyDiagramComponent emits\nregionClick("CV")
+spa -> spa : Scroll to matching\nBodySystemCardComponent
+
+user -> spa : Hover page-ref badge
+spa -> spa : After 350ms delay,\nshow PdfPreviewPopoverComponent
+
+user -> spa : Click "Export"
+spa -> spa : Generate HTML report\nfrom DeepDiveResult
+spa -> spa : Open print dialog
+
+@enduml

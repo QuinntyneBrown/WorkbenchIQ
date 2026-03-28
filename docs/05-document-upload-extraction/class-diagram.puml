@@ -1,0 +1,192 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Document Upload & Extraction class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title Document Upload & Extraction -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  class ApplicationsController <<ApiController>> {
+    -_applicationService : IApplicationService
+    +Create(files: IFormFileCollection, externalReference: string?, persona: string?) : Task<ActionResult<ApplicationMetadata>>
+    +Get(id: string) : Task<ActionResult<ApplicationMetadata>>
+    +List(persona: string?) : Task<ActionResult<List<ApplicationListItem>>>
+    +Extract(id: string, background: bool) : Task<IActionResult>
+    +GetFile(id: string, filename: string) : Task<IActionResult>
+    +Delete(id: string) : Task<IActionResult>
+  }
+
+  interface IApplicationService {
+    +CreateAsync(files, externalReference, persona) : Task<ApplicationMetadata>
+    +GetAsync(applicationId) : Task<ApplicationMetadata?>
+    +ListAsync(persona?) : Task<List<ApplicationListItem>>
+    +ExtractAsync(applicationId) : Task<ApplicationMetadata>
+    +DeleteAsync(applicationId) : Task<bool>
+  }
+
+  class ApplicationService {
+    -_storageProvider : IStorageProvider
+    -_cuClient : IContentUnderstandingClient
+    -_repository : IApplicationRepository
+    -_logger : ILogger<ApplicationService>
+  }
+
+  interface IContentUnderstandingClient {
+    +AnalyzeDocumentAsync(fileBytes: byte[], outputMarkdown: bool, ct: CancellationToken) : Task<JsonDocument>
+    +ExtractFieldsWithConfidenceAsync(rawResult: JsonDocument) : Task<Dictionary<string, ExtractedField>>
+    +ExtractMarkdown(rawResult: JsonDocument) : (string DocumentMarkdown, List<MarkdownPage> Pages)
+    +GetConfidenceSummary(fields: Dictionary<string, ExtractedField>) : ConfidenceSummary
+  }
+
+  class ContentUnderstandingClient {
+    -_httpClient : HttpClient
+    -_options : ContentUnderstandingOptions
+    -_credential : DefaultAzureCredential?
+    -_logger : ILogger<ContentUnderstandingClient>
+    -PollResultAsync(operationLocation: string, headers: Dictionary, ct: CancellationToken) : Task<JsonDocument>
+  }
+
+  class ContentUnderstandingOptions <<Options>> {
+    +Endpoint : string
+    +ApiKey : string?
+    +AnalyzerId : string
+    +ApiVersion : string
+    +UseAzureAd : bool
+    +PollTimeoutSeconds : int
+    +MaxRetries : int
+    +RetryBackoffMultiplier : double
+  }
+
+  interface IStorageProvider {
+    +SaveFileAsync(applicationId, filename, content) : Task<string>
+    +LoadFileAsync(applicationId, filename) : Task<byte[]?>
+    +GetFileUrlAsync(applicationId, filename) : Task<string?>
+    +SaveMetadataAsync(applicationId, metadata) : Task
+    +LoadMetadataAsync(applicationId) : Task<Dictionary?>
+    +SaveCuResultAsync(applicationId, payload) : Task<string>
+    +ListApplicationsAsync() : Task<List<string>>
+    +DeleteApplicationAsync(applicationId) : Task<bool>
+  }
+
+  class ApplicationMetadata <<Record>> {
+    +Id : string
+    +CreatedAt : DateTimeOffset
+    +ExternalReference : string?
+    +Status : ApplicationStatus
+    +Persona : string
+    +Files : List<StoredFileInfo>
+    +DocumentMarkdown : string?
+    +MarkdownPages : List<MarkdownPage>?
+    +CuRawResultPath : string?
+    +ExtractedFields : Dictionary<string, ExtractedField>?
+    +ConfidenceSummary : ConfidenceSummary?
+    +AnalyzerIdUsed : string?
+    +ProcessingStatus : ProcessingStatus?
+    +ProcessingError : string?
+  }
+
+  class StoredFileInfo <<Record>> {
+    +Filename : string
+    +Path : string
+    +Url : string?
+    +ContentType : string?
+  }
+
+  class ExtractedField <<Record>> {
+    +FieldName : string
+    +Value : object
+    +Confidence : double
+    +PageNumber : int?
+    +BoundingBox : double[]?
+    +SourceText : string?
+  }
+
+  class ConfidenceSummary <<Record>> {
+    +TotalFields : int
+    +AverageConfidence : double
+    +HighConfidenceCount : int
+    +MediumConfidenceCount : int
+    +LowConfidenceCount : int
+    +HighConfidenceFields : List<FieldSummaryItem>
+    +MediumConfidenceFields : List<FieldSummaryItem>
+    +LowConfidenceFields : List<FieldSummaryItem>
+  }
+
+  class MarkdownPage <<Record>> {
+    +File : string
+    +PageNumber : int
+    +Markdown : string
+  }
+
+  enum ApplicationStatus {
+    Pending
+    Extracted
+    Completed
+    Error
+  }
+
+  enum ProcessingStatus {
+    Extracting
+    Analyzing
+    Error
+  }
+
+  ApplicationsController --> IApplicationService : uses
+  ApplicationService ..|> IApplicationService
+  ApplicationService --> IStorageProvider : stores files
+  ApplicationService --> IContentUnderstandingClient : extracts content
+  ContentUnderstandingClient ..|> IContentUnderstandingClient
+  ContentUnderstandingClient --> ContentUnderstandingOptions : reads
+  ApplicationMetadata --> StoredFileInfo : contains
+  ApplicationMetadata --> ExtractedField : contains
+  ApplicationMetadata --> ConfidenceSummary : contains
+  ApplicationMetadata --> MarkdownPage : contains
+  ApplicationMetadata --> ApplicationStatus : uses
+  ApplicationMetadata --> ProcessingStatus : uses
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class "ApplicationService\n(Angular)" as NgAppService <<Injectable>> {
+    -http : HttpClient
+    +create(files: File[], externalReference?: string, persona?: string) : Observable<ApplicationMetadata>
+    +get(id: string) : Observable<ApplicationMetadata>
+    +list(persona?: string) : Observable<ApplicationListItem[]>
+    +extract(id: string, background: boolean) : Observable<ApplicationMetadata>
+    +pollStatus(id: string, intervalMs: number) : Observable<ApplicationMetadata>
+    +getFileUrl(id: string, filename: string) : string
+    +delete(id: string) : Observable<void>
+  }
+
+  class FileUploadComponent <<Standalone>> {
+    +persona : string
+    +acceptedTypes : string
+    +uploaded : EventEmitter<ApplicationMetadata>
+    -selectedFiles : File[]
+    -uploading : boolean
+    +onDrop(event: DragEvent) : void
+    +onFileSelected(event: Event) : void
+    +upload() : void
+  }
+
+  class DocumentPreviewComponent <<Standalone>> {
+    +application : ApplicationMetadata
+    -currentPage : number
+    +nextPage() : void
+    +previousPage() : void
+    +goToPage(page: number) : void
+  }
+
+  FileUploadComponent --> NgAppService : injects
+  DocumentPreviewComponent --> NgAppService : injects
+}
+
+NgAppService --> ApplicationsController : HTTP
+
+@enduml

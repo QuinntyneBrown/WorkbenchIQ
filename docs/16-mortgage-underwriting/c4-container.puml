@@ -1,0 +1,36 @@
+@startuml c4-container
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Container diagram for Mortgage Underwriting
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+scale max 1024 width
+
+title WorkbenchIQ -- C4 Container Diagram (Mortgage Underwriting)
+
+Person(underwriter, "Mortgage Underwriter", "Reviews mortgage applications and underwriting results.")
+
+System_Boundary(workbenchiq, "WorkbenchIQ") {
+
+    Container(spa, "Angular SPA", "Angular 17+, TypeScript", "Single-page application.\nMortgageWorkbenchComponent orchestrates the UI.\nCalculationsPanel, CompliancePanel, and\nPropertyDeepDiveModal present results.\nMortgageService handles API communication.")
+
+    Container(api, "API Server", ".NET 8, ASP.NET Core", "REST API.\nMortgageController exposes endpoints.\nMortgageService orchestrates the workflow.\nMortgageProcessor classifies and extracts.\nIncomeCalculator and LoanCalculator compute ratios.\nStressTestService runs B-20 MQR tests.\nMortgagePolicyEngine evaluates compliance.\nMortgageRiskAnalyzer assesses risk.")
+
+    ContainerDb(cosmos, "Cosmos DB", "Azure Cosmos DB", "Mortgage applications, extracted fields,\ncalculations, compliance results,\nand underwriting decisions.")
+
+    Container(blob, "Blob Storage", "Azure Blob Storage", "Uploaded mortgage documents:\nT4s, pay stubs, employment letters,\nappraisals, credit reports, land titles.")
+}
+
+System_Ext(azure_cu, "Azure AI Content Understanding", "Document classification and field extraction\nwith per-field confidence scores.\nCustom mortgage document analyzer.")
+
+System_Ext(azure_openai, "Azure OpenAI Service", "GPT-4o for property analysis narratives,\nrisk explanations, and compliance reasoning.")
+
+Rel(underwriter, spa, "Uses", "HTTPS")
+Rel(spa, api, "REST calls", "HTTPS / JSON")
+Rel(api, cosmos, "Read/write application data", "SDK")
+Rel(api, blob, "Upload/download documents", "SDK")
+Rel(api, azure_cu, "Classify documents, extract fields", "REST")
+Rel(api, azure_openai, "Generate analysis narratives", "REST")
+
+@enduml

@@ -1,0 +1,24 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for Document Upload & Extraction
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- System Context (Document Upload & Extraction)
+
+Person(user, "WorkbenchIQ User", "Uploads documents and reviews extracted content, fields, and confidence scores.")
+
+System(workbenchiq, "WorkbenchIQ", "Web application that accepts document uploads, extracts structured content via Azure Content Understanding, and presents results with confidence scoring.")
+
+System_Ext(azureCU, "Azure Content Understanding", "Azure AI service that analyzes documents, extracts markdown, and identifies structured fields with confidence scores.")
+
+System_Ext(azureBlob, "Azure Blob Storage", "Cloud object storage for uploaded files and extraction results.")
+
+Rel(user, workbenchiq, "Uploads documents, reviews extractions", "HTTPS")
+Rel(workbenchiq, azureCU, "Sends documents for analysis", "REST / HTTPS")
+Rel(workbenchiq, azureBlob, "Stores and retrieves files", "Azure SDK / HTTPS")
+
+@enduml

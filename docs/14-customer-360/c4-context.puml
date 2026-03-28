@@ -1,0 +1,21 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for Customer 360
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- System Context (Customer 360)
+
+Person(operator, "WorkbenchIQ Operator", "Reviews unified customer profiles across insurance personas.")
+
+System(workbenchiq, "WorkbenchIQ", "Web application that aggregates customer applications across underwriting, claims, and mortgage personas into a unified Customer 360 view.")
+
+System_Ext(storage, "Storage Backend", "Azure Blob Storage or local filesystem holding customer profiles, journey events, and risk correlations as JSON.")
+
+Rel(operator, workbenchiq, "Views customer list and 360 detail", "HTTPS")
+Rel(workbenchiq, storage, "Reads and writes customer data", "JSON files / Blob API")
+
+@enduml

@@ -1,0 +1,131 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Glossary Management sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+
+title Glossary Management -- Sequence Diagram
+
+actor User
+participant "Angular\nGlossaryEditorComponent" as Editor
+participant "Angular\nTermSearchComponent" as Search
+participant "Angular\nGlossaryService" as NgSvc
+participant "ASP.NET Core\nGlossaryController" as Ctrl
+participant "ASP.NET Core\nGlossaryService" as Svc
+participant "ASP.NET Core\nGlossaryRepository" as Repo
+database "glossary.json" as JSON
+
+== Load Glossary ==
+
+User -> Editor : Navigate to glossary page
+Editor -> NgSvc : getGlossary(persona)
+NgSvc -> Ctrl : GET /api/glossary/{persona}
+Ctrl -> Svc : GetGlossaryAsync(persona)
+Svc -> Svc : Resolve persona alias
+Svc -> Repo : LoadAsync(persona)
+Repo -> JSON : Read file
+JSON --> Repo : JSON content
+Repo --> Svc : PersonaGlossary
+Svc --> Ctrl : PersonaGlossary
+Ctrl --> NgSvc : 200 { persona, categories, totalTerms }
+NgSvc --> Editor : PersonaGlossary
+Editor --> User : Render categories & terms
+
+== Add Term ==
+
+User -> Editor : Fill term form & submit
+Editor -> NgSvc : addTerm(persona, termData)
+NgSvc -> Ctrl : POST /api/glossary/{persona}/terms
+Ctrl -> Svc : AddTermAsync(persona, categoryId, term)
+Svc -> Repo : LoadAsync(persona)
+Repo -> JSON : Read file
+JSON --> Repo : JSON content
+Repo --> Svc : PersonaGlossary
+Svc -> Svc : Validate abbreviation uniqueness
+alt Duplicate abbreviation
+  Svc --> Ctrl : throw ConflictException
+  Ctrl --> NgSvc : 409 { error: "Term already exists" }
+  NgSvc --> Editor : error
+  Editor --> User : Show error message
+else Unique abbreviation
+  Svc -> Svc : Add term to category,\nsort alphabetically
+  Svc -> Repo : SaveAsync(persona, glossary)
+  Repo -> JSON : Write file
+  Svc --> Ctrl : GlossaryTerm
+  Ctrl --> NgSvc : 201 { abbreviation, meaning, ... }
+  NgSvc --> Editor : GlossaryTerm
+  Editor --> User : Refresh term list
+end
+
+== Update Term ==
+
+User -> Editor : Edit term fields & save
+Editor -> NgSvc : updateTerm(persona, abbreviation, updates)
+NgSvc -> Ctrl : PUT /api/glossary/{persona}/terms/{abbreviation}
+Ctrl -> Svc : UpdateTermAsync(persona, abbreviation, updates)
+Svc -> Repo : LoadAsync(persona)
+Repo --> Svc : PersonaGlossary
+Svc -> Svc : Find term by abbreviation
+alt Category change requested
+  Svc -> Svc : Move term to new category
+end
+Svc -> Svc : Apply field updates
+Svc -> Repo : SaveAsync(persona, glossary)
+Repo -> JSON : Write file
+Svc --> Ctrl : GlossaryTerm
+Ctrl --> NgSvc : 200 { updated term }
+NgSvc --> Editor : GlossaryTerm
+Editor --> User : Refresh display
+
+== Delete Term ==
+
+User -> Editor : Click delete on term
+Editor -> Editor : Show confirmation dialog
+User -> Editor : Confirm
+Editor -> NgSvc : deleteTerm(persona, abbreviation)
+NgSvc -> Ctrl : DELETE /api/glossary/{persona}/terms/{abbreviation}
+Ctrl -> Svc : DeleteTermAsync(persona, abbreviation)
+Svc -> Repo : LoadAsync(persona)
+Repo --> Svc : PersonaGlossary
+Svc -> Svc : Find & remove term
+Svc -> Repo : SaveAsync(persona, glossary)
+Repo -> JSON : Write file
+Svc --> Ctrl : success
+Ctrl --> NgSvc : 204 No Content
+NgSvc --> Editor : void
+Editor --> User : Remove term from list
+
+== Search Glossary ==
+
+User -> Search : Type search query
+Search -> Search : Debounce 300 ms
+Search -> NgSvc : searchTerms(persona, query, category?)
+NgSvc -> Ctrl : GET /api/glossary/{persona}/search?q=...&category=...
+Ctrl -> Svc : SearchAsync(persona, query, category)
+Svc -> Repo : LoadAsync(persona)
+Repo --> Svc : PersonaGlossary
+Svc -> Svc : Case-insensitive match on\nabbreviation, meaning, context
+Svc -> Svc : Filter by category (if provided)
+Svc -> Svc : Sort results by abbreviation
+Svc --> Ctrl : List<GlossarySearchResult>
+Ctrl --> NgSvc : 200 [ { abbreviation, meaning, category, ... } ]
+NgSvc --> Search : GlossarySearchResult[]
+Search --> User : Display results with highlights
+
+== Glossary Injection into Chat Context ==
+
+participant "ASP.NET Core\nChatService" as Chat
+
+User -> Chat : Send chat message
+Chat -> Svc : FormatForPromptAsync(persona, maxTerms: 50)
+Svc -> Repo : LoadAsync(persona)
+Repo --> Svc : PersonaGlossary
+Svc -> Svc : Collect all terms across categories\n(limit to 50, sorted alphabetically)
+Svc -> Svc : Format as compact list:\n"- ABV: Meaning"
+Svc --> Chat : formatted glossary string
+Chat -> Chat : Inject into system prompt:\n"Domain Terminology:\n- HTN: Hypertension\n- CAD: Coronary artery disease\n..."
+Chat -> Chat : Send prompt to LLM
+
+@enduml

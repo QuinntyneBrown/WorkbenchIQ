@@ -1,0 +1,103 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Authentication & Authorization class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title Authentication & Authorization -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  class AuthOptions <<Options>> {
+    +ApiKey : string?
+    +AuthSecret : string
+    +SessionMaxAgeMinutes : int
+    +Users : Dictionary<string, string>
+  }
+
+  interface IAuthService {
+    +IsAuthEnabled() : bool
+    +ValidateCredentials(username: string, password: string) : bool
+    +CreateSessionToken(username: string) : string
+    +ValidateSessionToken(token: string) : string?
+  }
+
+  class AuthService {
+    -_options : AuthOptions
+    -_logger : ILogger<AuthService>
+    +IsAuthEnabled() : bool
+    +ValidateCredentials(username: string, password: string) : bool
+    +CreateSessionToken(username: string) : string
+    +ValidateSessionToken(token: string) : string?
+  }
+
+  class ApiKeyAuthenticationMiddleware <<IMiddleware>> {
+    -_options : AuthOptions
+    -_logger : ILogger
+    +InvokeAsync(context: HttpContext, next: RequestDelegate) : Task
+  }
+
+  class AuthController <<ApiController>> {
+    -_authService : IAuthService
+    +Check() : IActionResult
+    +Login(request: LoginRequest) : IActionResult
+    +Logout() : IActionResult
+  }
+
+  class LoginRequest <<Record>> {
+    +Username : string
+    +Password : string
+  }
+
+  class AuthCheckResponse <<Record>> {
+    +Authenticated : bool
+    +AuthEnabled : bool
+    +Username : string?
+  }
+
+  AuthService ..|> IAuthService
+  AuthService --> AuthOptions : reads
+  AuthController --> IAuthService : uses
+  AuthController ..> LoginRequest : receives
+  AuthController ..> AuthCheckResponse : returns
+  ApiKeyAuthenticationMiddleware --> AuthOptions : reads
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class "AuthService\n(Angular)" as NgAuthService <<Injectable>> {
+    -http : HttpClient
+    +isAuthenticated$ : BehaviorSubject<boolean>
+    +checkAuth() : Observable<AuthStatus>
+    +login(username: string, password: string) : Observable<LoginResponse>
+    +logout() : Observable<void>
+  }
+
+  class AuthGuard <<CanActivateFn>> {
+    +canActivate(route, state) : Observable<boolean | UrlTree>
+  }
+
+  class LoginComponent <<Standalone>> {
+    -authService : AuthService
+    -router : Router
+    +loginForm : FormGroup
+    +errorMessage : string
+    +onSubmit() : void
+  }
+
+  class AuthInterceptor <<HttpInterceptorFn>> {
+    +intercept(req, next) : Observable<HttpEvent>
+  }
+
+  AuthGuard --> NgAuthService : injects
+  LoginComponent --> NgAuthService : injects
+  AuthInterceptor --> NgAuthService : injects
+}
+
+NgAuthService --> AuthController : HTTP
+
+@enduml

@@ -1,0 +1,221 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- RAG System class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title RAG System -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  class RagSettings <<Options>> {
+    +Enabled : bool
+    +TopK : int
+    +SimilarityThreshold : double
+    +EmbeddingModel : string
+    +EmbeddingDimensions : int
+    +MaxTokenBudget : int
+    +ChunkSize : int
+    +ChunkOverlap : int
+  }
+
+  interface IRagService {
+    +QueryAsync(query: string, personaId: string) : Task<RagContext>
+    +IsAvailableAsync(personaId: string) : Task<bool>
+  }
+
+  class RagService {
+    -_searchFactory : IPolicySearchServiceFactory
+    -_contextBuilder : IRagContextBuilder
+    -_settings : RagSettings
+    -_logger : ILogger<RagService>
+    +QueryAsync(query: string, personaId: string) : Task<RagContext>
+    +IsAvailableAsync(personaId: string) : Task<bool>
+    -FallbackToFullPolicyAsync(personaId: string) : Task<RagContext>
+  }
+
+  interface IPolicySearchService {
+    +SearchAsync(query: string, personaId: string, topK: int) : Task<List<SearchResult>>
+  }
+
+  class PolicySearchService {
+    -_embeddingService : IEmbeddingService
+    -_repository : IPolicyChunkRepository
+    -_settings : RagSettings
+    +SearchAsync(query: string, personaId: string, topK: int) : Task<List<SearchResult>>
+    #GetKeywordWeight() : double
+    #GetSemanticWeight() : double
+  }
+
+  class AutomotivePolicySearchService {
+    #GetKeywordWeight() : double
+    #GetSemanticWeight() : double
+  }
+
+  class MortgagePolicySearchService {
+    #GetKeywordWeight() : double
+    #GetSemanticWeight() : double
+  }
+
+  class DefaultPolicySearchService {
+    #GetKeywordWeight() : double
+    #GetSemanticWeight() : double
+  }
+
+  interface IPolicySearchServiceFactory {
+    +Create(personaId: string) : IPolicySearchService
+  }
+
+  interface IPolicyIndexer {
+    +IndexPolicyAsync(policyId: Guid, personaId: string, text: string) : Task
+    +IndexAllAsync(personaId: string) : Task
+    +RemoveAsync(policyId: Guid) : Task
+  }
+
+  class PolicyIndexer {
+    -_embeddingService : IEmbeddingService
+    -_repository : IPolicyChunkRepository
+    -_settings : RagSettings
+    +IndexPolicyAsync(policyId: Guid, personaId: string, text: string) : Task
+    +IndexAllAsync(personaId: string) : Task
+    +RemoveAsync(policyId: Guid) : Task
+    -ChunkText(text: string) : List<(string Text, int Index)>
+    -ComputeHash(text: string) : string
+  }
+
+  interface IRagContextBuilder {
+    +BuildAsync(results: List<SearchResult>, tokenBudget: int) : Task<RagContext>
+  }
+
+  class RagContextBuilder {
+    -_settings : RagSettings
+    +BuildAsync(results: List<SearchResult>, tokenBudget: int) : Task<RagContext>
+    -FormatCitation(index: int, chunk: PolicyChunk) : string
+  }
+
+  interface IEmbeddingService {
+    +GenerateAsync(text: string) : Task<float[]>
+    +GenerateBatchAsync(texts: List<string>) : Task<List<float[]>>
+  }
+
+  class EmbeddingService {
+    -_openAiClient : OpenAIClient
+    -_cache : IMemoryCache
+    -_settings : RagSettings
+    +GenerateAsync(text: string) : Task<float[]>
+    +GenerateBatchAsync(texts: List<string>) : Task<List<float[]>>
+  }
+
+  interface IPolicyChunkRepository {
+    +GetByPolicyAsync(policyId: Guid) : Task<List<PolicyChunk>>
+    +SearchByVectorAsync(vector: float[], personaId: string, topK: int, threshold: double) : Task<List<SearchResult>>
+    +SearchByKeywordAsync(query: string, personaId: string, topK: int) : Task<List<SearchResult>>
+    +BulkInsertAsync(chunks: List<PolicyChunk>) : Task
+    +DeleteByPolicyAsync(policyId: Guid) : Task
+    +GetChunkCountAsync(personaId: string) : Task<int>
+  }
+
+  class PolicyChunkRepository {
+    -_dbContext : AppDbContext
+    +GetByPolicyAsync(policyId: Guid) : Task<List<PolicyChunk>>
+    +SearchByVectorAsync(vector: float[], personaId: string, topK: int, threshold: double) : Task<List<SearchResult>>
+    +SearchByKeywordAsync(query: string, personaId: string, topK: int) : Task<List<SearchResult>>
+    +BulkInsertAsync(chunks: List<PolicyChunk>) : Task
+    +DeleteByPolicyAsync(policyId: Guid) : Task
+    +GetChunkCountAsync(personaId: string) : Task<int>
+  }
+
+  class PolicyChunk <<Entity>> {
+    +Id : Guid
+    +PolicyId : Guid
+    +PersonaId : string
+    +ChunkIndex : int
+    +ChunkText : string
+    +EmbeddingVector : float[]
+    +TokenCount : int
+    +ContentHash : string
+    +CreatedAtUtc : DateTime
+  }
+
+  class SearchResult <<Record>> {
+    +Chunk : PolicyChunk
+    +SimilarityScore : double
+    +KeywordScore : double
+    +CombinedScore : double
+  }
+
+  class RagContext <<Record>> {
+    +ContextText : string
+    +Citations : List<Citation>
+    +TokensUsed : int
+    +IsFallback : bool
+  }
+
+  class Citation <<Record>> {
+    +Index : int
+    +PolicyName : string
+    +ChunkIndex : int
+    +Score : double
+  }
+
+  RagService ..|> IRagService
+  RagService --> IPolicySearchServiceFactory : uses
+  RagService --> IRagContextBuilder : uses
+  RagService --> RagSettings : reads
+
+  AutomotivePolicySearchService --|> PolicySearchService
+  MortgagePolicySearchService --|> PolicySearchService
+  DefaultPolicySearchService --|> PolicySearchService
+  PolicySearchService ..|> IPolicySearchService
+  PolicySearchService --> IEmbeddingService : uses
+  PolicySearchService --> IPolicyChunkRepository : uses
+  PolicySearchService --> RagSettings : reads
+
+  PolicyIndexer ..|> IPolicyIndexer
+  PolicyIndexer --> IEmbeddingService : uses
+  PolicyIndexer --> IPolicyChunkRepository : uses
+  PolicyIndexer --> RagSettings : reads
+
+  RagContextBuilder ..|> IRagContextBuilder
+  RagContextBuilder --> RagSettings : reads
+
+  EmbeddingService ..|> IEmbeddingService
+  EmbeddingService --> RagSettings : reads
+
+  PolicyChunkRepository ..|> IPolicyChunkRepository
+
+  SearchResult --> PolicyChunk : contains
+  RagContext --> Citation : contains
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class "RagAdminService\n(Angular)" as NgRagAdmin <<Injectable>> {
+    -http : HttpClient
+    +getStatus() : Observable<RagStatus>
+    +triggerIndex(personaId: string) : Observable<void>
+    +triggerIndexAll() : Observable<void>
+  }
+
+  class PolicyIndexComponent <<Standalone>> {
+    -ragAdmin : RagAdminService
+    +personaStatuses : Signal<PersonaIndexStatus[]>
+    +onReindex(personaId: string) : void
+    +onReindexAll() : void
+  }
+
+  class RagContextPanelComponent <<Standalone>> {
+    +citations : InputSignal<Citation[]>
+    +isVisible : Signal<boolean>
+  }
+
+  PolicyIndexComponent --> NgRagAdmin : injects
+}
+
+NgRagAdmin --> IRagService : HTTP
+
+@enduml

@@ -1,0 +1,50 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for Large Document Processing
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Component Diagram (Large Document Processing)
+
+Person(underwriter, "Underwriter")
+
+Container_Boundary(angular, "Angular SPA") {
+  Component(banner, "LargeDocumentBannerComponent", "Standalone Component", "Displays document size, page count, and compression ratio when large-document mode is active.")
+  Component(batchPanel, "BatchSummaryPanelComponent", "Standalone Component", "Expandable panel listing each batch summary with page ranges for audit trail.")
+  Component(ngLargeDocSvc, "LargeDocumentService", "Injectable Service", "Manages reactive signals for processing mode, condensed context, batch summaries, and document stats.")
+  Component(chatSvc, "ChatService", "Injectable Service", "Routes chat messages; substitutes condensed context for large documents.")
+}
+
+Container_Boundary(dotnet, "ASP.NET Core Backend") {
+  Component(docCtrl, "DocumentController", "ApiController", "Handles document upload; triggers size detection and large-document processing pipeline.")
+  Component(chatCtrl, "ChatController", "ApiController", "Serves chat endpoint; selects condensed context or full markdown based on ProcessingMode.")
+  Component(processor, "LargeDocumentProcessor", "ILargeDocumentProcessor impl", "Orchestrates the full pipeline: detection, page extraction, summarization routing, and context assembly.")
+  Component(chunker, "DocumentChunker", "Singleton Service", "Extracts pages from markdown via regex; selects key pages by keyword scoring; partitions pages into batches.")
+  Component(summarizer, "ProgressiveSummarizer", "Scoped Service", "Executes LLM calls for batch summarization (Phase 1) and consolidation (Phase 2) with rate-limit delay.")
+  Component(procOpts, "ProcessingOptions", "IOptions<T>", "Typed configuration: thresholds, batch size, delay, character limits.")
+  Component(promptOpts, "LargeDocumentPromptOptions", "IOptions<T>", "Externalized prompt templates and system messages loaded from JSON.")
+}
+
+System_Ext(azureOpenAI, "Azure OpenAI Service", "GPT chat-completion")
+
+Rel(underwriter, banner, "Views processing status")
+Rel(underwriter, batchPanel, "Expands batch details")
+Rel(banner, ngLargeDocSvc, "Reads signals")
+Rel(batchPanel, ngLargeDocSvc, "Reads signals")
+Rel(chatSvc, ngLargeDocSvc, "Checks ProcessingMode")
+
+Rel(ngLargeDocSvc, docCtrl, "HTTP upload &\nprocessing results", "JSON / HTTPS")
+Rel(chatSvc, chatCtrl, "HTTP chat requests", "JSON / HTTPS")
+
+Rel(docCtrl, processor, "BuildCondensedContextAsync()")
+Rel(chatCtrl, processor, "DetectProcessingMode()")
+Rel(processor, chunker, "ExtractPages(),\nSelectKeyPages(),\nCreateBatches()")
+Rel(processor, summarizer, "SummarizeProgressivelyAsync(),\nSummarizePagesAsync()")
+Rel(processor, procOpts, "Reads thresholds")
+Rel(summarizer, promptOpts, "Reads prompt templates")
+Rel(summarizer, azureOpenAI, "Chat-completion calls", "HTTPS / REST")
+
+@enduml

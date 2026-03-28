@@ -1,0 +1,29 @@
+@startuml c4-container
+scale max 1024 width
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+title WorkbenchIQ -- C4 Container Diagram (Storage Providers)
+
+Person(user, "Application User", "Uploads files, views results")
+
+System_Boundary(workbenchiq, "WorkbenchIQ") {
+  Container(spa, "Angular SPA", "TypeScript, Angular", "Single-page application served to the browser")
+  Container(api, "Web API", ".NET 8, ASP.NET Core", "REST API handling file uploads, metadata, and CU results")
+  Container(storageLib, "Storage Provider Library", ".NET 8 Class Library", "IStorageProvider abstraction, DI registration, concrete providers")
+}
+
+System_Ext(azureBlob, "Azure Blob Storage", "Production file/metadata store")
+System_Ext(localFs, "Local Filesystem", "Development file/metadata store")
+System_Ext(azureAd, "Microsoft Entra ID", "Managed-identity token provider")
+
+Rel(user, spa, "Uses", "HTTPS")
+Rel(spa, api, "Calls", "HTTPS / JSON")
+Rel(api, storageLib, "Depends on", ".NET DI")
+Rel(storageLib, azureBlob, "Reads/writes blobs", "HTTPS (Azure SDK)")
+Rel(storageLib, localFs, "Reads/writes files", "File I/O")
+Rel(storageLib, azureAd, "Acquires tokens (when AuthMode=Default)", "HTTPS")
+
+@enduml

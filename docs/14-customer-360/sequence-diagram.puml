@@ -1,0 +1,102 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Customer 360 View Assembly sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+
+title Customer 360 -- View Assembly Sequence Diagram
+
+actor User
+participant "Angular\nCustomerDetailComponent" as Detail
+participant "Angular\nCustomer360Service" as NgSvc
+participant "ASP.NET Core\nCustomer360Controller" as Ctrl
+participant "ASP.NET Core\nCustomer360Service" as Svc
+participant "ASP.NET Core\nICustomerRepository" as Repo
+database "Storage\n(FileSystem / Azure Blob)" as Store
+
+== Load Customer 360 View ==
+
+User -> Detail : Navigate to /customers/{id}
+Detail -> NgSvc : getCustomer360(customerId)
+NgSvc -> Ctrl : GET /api/customers/{customerId}
+Ctrl -> Svc : GetCustomer360ViewAsync(customerId)
+
+== Step 1: Load Customer Profile ==
+
+Svc -> Repo : GetProfileAsync(customerId)
+Repo -> Store : Read customers/{customerId}/profile.json
+Store --> Repo : JSON data
+Repo --> Svc : CustomerProfile
+
+alt Profile not found
+  Svc --> Ctrl : null
+  Ctrl --> NgSvc : 404 Not Found
+  NgSvc --> Detail : error
+  Detail --> User : Show "Customer not found"
+end
+
+== Step 2: Load Pre-Computed Journey Events ==
+
+Svc -> Repo : GetJourneyEventsAsync(customerId)
+Repo -> Store : Read customers/{customerId}/journey.json
+Store --> Repo : JSON array
+Repo --> Svc : List<CustomerJourneyEvent>
+
+== Step 3: Build Persona Summaries ==
+
+Svc -> Svc : BuildPersonaSummaries(journeyEvents)
+note right
+  Group events by persona.
+  For each persona:
+    - Count distinct application IDs
+    - Find latest event by date
+    - Extract status, risk level, key metrics
+    - Map persona key to display label
+end note
+
+== Step 4: Compute Active Claims ==
+
+Svc -> Svc : ComputeActiveClaims(personaSummaries)
+note right
+  Count claims personas
+  (life_health_claims, automotive_claims)
+  where latest status is not
+  "closed" or "denied".
+end note
+
+== Step 5: Load Risk Correlations ==
+
+Svc -> Repo : GetRiskCorrelationsAsync(customerId)
+Repo -> Store : Read customers/{customerId}/risk_correlations.json
+Store --> Repo : JSON array
+Repo --> Svc : List<RiskCorrelation>
+
+== Step 6: Assemble and Return 360 View ==
+
+Svc --> Ctrl : Customer360View
+note right
+  Customer360View {
+    Profile,
+    JourneyEvents (sorted newest-first),
+    PersonaSummaries,
+    RiskCorrelations,
+    TotalProducts = count of personas,
+    ActiveClaims,
+    OverallRisk = profile.RiskTier
+  }
+end note
+Ctrl --> NgSvc : 200 OK + Customer360ViewDto
+NgSvc --> Detail : Customer360View
+
+== Render Detail Page ==
+
+Detail -> Detail : Render CustomerProfileHeaderComponent
+Detail -> Detail : Render CustomerJourneyMetricsComponent
+Detail -> Detail : Render CustomerTimelineComponent
+Detail -> Detail : Render PersonaSummaryCardComponent (per persona)
+Detail -> Detail : Render RiskCorrelationBannerComponent (per correlation)
+Detail --> User : Display complete Customer 360 view
+
+@enduml

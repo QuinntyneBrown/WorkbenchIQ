@@ -1,0 +1,24 @@
+@startuml c4-container
+scale max 1024 width
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Risk Analysis & Deep-Dive -- C4 Container Diagram
+
+Person(underwriter, "Underwriter", "Reviews risk findings and deep-dive body-system analysis")
+
+System_Boundary(workbenchiq, "WorkbenchIQ") {
+  Container(angularApp, "Angular SPA", "Angular 17+, TypeScript", "Interactive body diagram, deep-dive modal, risk analysis panels, abnormal labs table, PDF preview popovers")
+  Container(apiServer, "API Server", ".NET 8, ASP.NET Core", "Hosts RiskAnalysisController with risk-analysis and deep-dive endpoints; orchestrates policy loading, LLM calls, and result persistence")
+  ContainerDb(appStorage, "Application Storage", "File System / Blob Storage", "Stores ApplicationMetadata including risk_analysis and LLM outputs with deep-dive subsections")
+  Container(policyFiles, "Policy Files", "JSON", "Underwriting policy definitions, risk-analysis prompt templates, and medical glossary")
+}
+
+System_Ext(azureOpenAI, "Azure OpenAI Service", "GPT-4o for risk evaluation and deep-dive subsection analysis")
+
+Rel(underwriter, angularApp, "Triggers analysis, explores findings", "HTTPS")
+Rel(angularApp, apiServer, "POST/GET risk-analysis, POST/GET deep-dive", "HTTPS / JSON")
+Rel(apiServer, appStorage, "Reads LLM outputs, persists RiskAssessment and DeepDiveResult", "File I/O")
+Rel(apiServer, policyFiles, "Loads policies, prompts, glossary at analysis time", "File I/O")
+Rel(apiServer, azureOpenAI, "Sends policy-injected prompts, receives structured JSON", "HTTPS / REST")
+
+@enduml

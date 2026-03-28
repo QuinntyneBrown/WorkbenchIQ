@@ -1,0 +1,25 @@
+@startuml c4-context
+scale max 1024 width
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+
+title WorkbenchIQ -- C4 Context Diagram (Storage Providers)
+
+Person(user, "Application User", "Uploads files, views results, manages applications")
+Person(admin, "Administrator", "Configures storage backend and credentials")
+
+System(workbenchiq, "WorkbenchIQ", "Web application for content understanding workflows.\nBuilt with .NET 8 + Angular.")
+
+System_Ext(azureBlob, "Azure Blob Storage", "Cloud object storage for files, metadata, and CU results")
+System_Ext(localFs, "Local Filesystem", "Development-time storage on the server's disk")
+System_Ext(azureAd, "Microsoft Entra ID", "Provides DefaultAzureCredential for managed-identity auth")
+
+Rel(user, workbenchiq, "Uploads files, retrieves results", "HTTPS")
+Rel(admin, workbenchiq, "Configures storage via appsettings / env vars")
+Rel(workbenchiq, azureBlob, "Reads/writes blobs", "HTTPS (Azure SDK)")
+Rel(workbenchiq, localFs, "Reads/writes files", "File I/O")
+Rel(workbenchiq, azureAd, "Acquires tokens", "HTTPS (MSAL)")
+
+@enduml

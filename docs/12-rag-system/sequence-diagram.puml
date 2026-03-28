@@ -1,0 +1,108 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- RAG System sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+
+title RAG System -- Sequence Diagram
+
+== Policy Indexing Flow ==
+
+actor Admin
+participant "Angular\nPolicyIndexComponent" as UI
+participant "ASP.NET Core\nRagController" as Ctrl
+participant "PolicyIndexer" as Indexer
+participant "EmbeddingService" as Embed
+participant "PolicyChunkRepository" as Repo
+database "PostgreSQL\n+ pgvector" as DB
+participant "Azure OpenAI\nEmbeddings API" as AzureOAI
+
+Admin -> UI : Click "Re-index" for persona
+UI -> Ctrl : POST /api/rag/index/{personaId}
+Ctrl -> Indexer : IndexAllAsync(personaId)
+
+Indexer -> Repo : GetByPolicyAsync(policyId)
+Repo -> DB : SELECT content_hash\nFROM policy_chunks\nWHERE policy_id = @id
+DB --> Repo : existing hashes
+Repo --> Indexer : existing chunks
+
+Indexer -> Indexer : ComputeHash(policyText)
+alt Content hash unchanged
+  Indexer -> Indexer : Skip (already indexed)
+else New or modified policy
+  Indexer -> Indexer : ChunkText(policyText)\n=> List<(Text, Index)>
+  Indexer -> Embed : GenerateBatchAsync(chunkTexts)
+  Embed -> Embed : Check IMemoryCache
+  Embed -> AzureOAI : POST /embeddings\n(batch, text-embedding-3-small)
+  AzureOAI --> Embed : float[][] vectors
+  Embed --> Indexer : List<float[]>
+  Indexer -> Repo : DeleteByPolicyAsync(policyId)
+  Repo -> DB : DELETE FROM policy_chunks\nWHERE policy_id = @id
+  Indexer -> Repo : BulkInsertAsync(newChunks)
+  Repo -> DB : INSERT INTO policy_chunks\n(id, policy_id, persona_id,\nchunk_text, embedding_vector, ...)
+  DB --> Repo : OK
+end
+
+Repo --> Indexer : done
+Indexer --> Ctrl : done
+Ctrl --> UI : 202 Accepted
+UI --> Admin : Show progress / complete
+
+== Query-Time Retrieval Flow ==
+
+actor User
+participant "Angular\nChatComponent" as Chat
+participant "ASP.NET Core\nChatController" as ChatCtrl
+participant "RagService" as Rag
+participant "PolicySearchService\n(persona-specific)" as Search
+participant "EmbeddingService" as Embed2
+participant "PolicyChunkRepository" as Repo2
+database "PostgreSQL\n+ pgvector" as DB2
+participant "RagContextBuilder" as Builder
+participant "Azure OpenAI\nChat API" as LLM
+
+User -> Chat : Submit question
+Chat -> ChatCtrl : POST /api/chat\n{ query, personaId }
+ChatCtrl -> Rag : QueryAsync(query, personaId)
+
+Rag -> Rag : IsAvailableAsync(personaId)
+alt RAG enabled and index has chunks
+  Rag -> Search : SearchAsync(query, personaId, topK)
+
+  Search -> Embed2 : GenerateAsync(query)
+  Embed2 -> Embed2 : Check IMemoryCache
+  Embed2 -> AzureOAI : POST /embeddings
+  AzureOAI --> Embed2 : float[] queryVector
+  Embed2 --> Search : queryVector
+
+  Search -> Repo2 : SearchByVectorAsync(queryVector,\npersonaId, topK, threshold)
+  Repo2 -> DB2 : SELECT *, 1 - (embedding_vector <=> @v)\nAS similarity\nFROM policy_chunks\nWHERE persona_id = @p\nORDER BY similarity DESC\nLIMIT @k
+  DB2 --> Repo2 : semantic results
+  Repo2 --> Search : List<SearchResult>
+
+  Search -> Repo2 : SearchByKeywordAsync(query,\npersonaId, topK)
+  Repo2 -> DB2 : SELECT *, ts_rank(tsv,\nplainto_tsquery(@q))\nFROM policy_chunks\nWHERE persona_id = @p\nAND tsv @@ plainto_tsquery(@q)
+  DB2 --> Repo2 : keyword results
+  Repo2 --> Search : List<SearchResult>
+
+  Search -> Search : Merge & re-rank\n(semantic * weight + keyword * weight)
+  Search --> Rag : List<SearchResult> (top-k)
+
+  Rag -> Builder : BuildAsync(results, maxTokenBudget)
+  Builder -> Builder : Greedy fill by score\nFormat citations [1], [2], ...
+  Builder --> Rag : RagContext
+
+else RAG disabled or index empty
+  Rag -> Rag : FallbackToFullPolicyAsync(personaId)
+  note right : Inject full policy text;\nset IsFallback = true
+end
+
+Rag --> ChatCtrl : RagContext
+ChatCtrl -> LLM : Chat completion\n(system prompt + RAG context + user query)
+LLM --> ChatCtrl : LLM response
+ChatCtrl --> Chat : { answer, citations }
+Chat --> User : Display answer\nwith citation panel
+
+@enduml

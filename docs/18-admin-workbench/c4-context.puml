@@ -1,0 +1,29 @@
+@startuml c4-context
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Context diagram for Admin Workbench
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- System Context (Admin Workbench)
+
+Person(admin, "Administrator", "Configures prompts, analyzers, policies, glossaries, and manages document processing.")
+Person(analyst, "Analyst", "Reviews extracted data and analysis results in the workbench view.")
+
+System(workbenchiq, "WorkbenchIQ", "Web application for document intake, AI-powered extraction, and domain-specific analysis with admin configuration capabilities.")
+
+System_Ext(browser, "Web Browser", "Renders the Angular SPA including admin tabs, workbench view, and landing page.")
+System_Ext(azurecu, "Azure Content Understanding", "Cloud service for document extraction using custom analyzers with field schemas.")
+System_Ext(llm, "Azure OpenAI", "Large language model used for document analysis, risk assessment, and chat.")
+System_Ext(blobstore, "Azure Blob Storage", "Stores uploaded documents, extraction results, and application metadata.")
+
+Rel(admin, browser, "Manages configuration via")
+Rel(analyst, browser, "Reviews applications via")
+Rel(browser, workbenchiq, "HTTPS requests", "REST / JSON")
+Rel(workbenchiq, azurecu, "Creates analyzers, extracts documents", "HTTPS / REST")
+Rel(workbenchiq, llm, "Sends prompts for analysis", "HTTPS / API")
+Rel(workbenchiq, blobstore, "Reads/writes documents and metadata", "HTTPS / SDK")
+
+@enduml

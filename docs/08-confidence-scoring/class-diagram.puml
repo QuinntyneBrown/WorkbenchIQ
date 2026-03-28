@@ -1,0 +1,114 @@
+@startuml class-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Confidence Scoring class diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+title Confidence Scoring -- Class Diagram
+
+package "ASP.NET Core Backend" <<Rectangle>> {
+
+  enum ConfidenceLevel {
+    High
+    Medium
+    Low
+  }
+
+  class ExtractedField <<Record>> {
+    +Name : string
+    +Value : string?
+    +Confidence : double
+    +BoundingRegion : BoundingRegion?
+    +Level : ConfidenceLevel <<get>>
+  }
+
+  class BoundingRegion <<Record>> {
+    +PageNumber : int
+    +Polygon : IReadOnlyList<double>
+  }
+
+  class ConfidenceSummary <<Record>> {
+    +TotalFields : int
+    +HighCount : int
+    +MediumCount : int
+    +LowCount : int
+    +HighFields : IReadOnlyList<ExtractedField>
+    +MediumFields : IReadOnlyList<ExtractedField>
+    +LowFields : IReadOnlyList<ExtractedField>
+    +AverageConfidence : double
+    +{static} FromFields(fields: IEnumerable<ExtractedField>) : ConfidenceSummary
+  }
+
+  class ConfidenceAnalyzerOptions <<Options>> {
+    +DefaultAnalyzerId : string
+    +HighThreshold : double
+    +MediumThreshold : double
+  }
+
+  interface IConfidenceAnalyzer {
+    +AnalyzeDocumentAsync(document: Stream, analyzerId: string, ct: CancellationToken) : Task<IReadOnlyList<ExtractedField>>
+    +AnalyzeDocumentWithSummaryAsync(document: Stream, analyzerId: string, ct: CancellationToken) : Task<ConfidenceSummary>
+  }
+
+  class ConfidenceAnalyzer {
+    -_client : ContentUnderstandingClient
+    -_options : ConfidenceAnalyzerOptions
+    -_logger : ILogger<ConfidenceAnalyzer>
+    +AnalyzeDocumentAsync(document: Stream, analyzerId: string, ct: CancellationToken) : Task<IReadOnlyList<ExtractedField>>
+    +AnalyzeDocumentWithSummaryAsync(document: Stream, analyzerId: string, ct: CancellationToken) : Task<ConfidenceSummary>
+  }
+
+  class ConfidenceController <<ApiController>> {
+    -_analyzer : IConfidenceAnalyzer
+    +Analyze(file: IFormFile, analyzerId: string?) : Task<IActionResult>
+    +AnalyzeFields(file: IFormFile, analyzerId: string?) : Task<IActionResult>
+  }
+
+  ConfidenceAnalyzer ..|> IConfidenceAnalyzer
+  ConfidenceAnalyzer --> ConfidenceAnalyzerOptions : reads
+  ConfidenceAnalyzer --> ConfidenceSummary : creates
+  ConfidenceAnalyzer --> ExtractedField : creates
+  ConfidenceController --> IConfidenceAnalyzer : uses
+  ConfidenceController ..> ConfidenceSummary : returns
+  ExtractedField --> ConfidenceLevel : exposes
+  ExtractedField --> BoundingRegion : contains
+  ConfidenceSummary --> ExtractedField : groups
+}
+
+package "Angular Frontend" <<Rectangle>> {
+
+  class ConfidenceService <<Injectable>> {
+    -http : HttpClient
+    +analyzeDocument(file: File, analyzerId?: string) : Observable<ConfidenceSummary>
+    +analyzeDocumentFields(file: File, analyzerId?: string) : Observable<ExtractedField[]>
+  }
+
+  class ConfidenceBadgeComponent <<Standalone>> {
+    +confidence : number
+    +showPercentage : boolean
+    +level : ConfidenceLevel <<computed>>
+    +cssClass : string <<computed>>
+  }
+
+  class ExtractedFieldsComponent <<Standalone>> {
+    +fields : ExtractedField[]
+    +sortBy : 'name' | 'confidence'
+    +onSort(column: string) : void
+  }
+
+  class ConfidenceSummaryComponent <<Standalone>> {
+    +summary : ConfidenceSummary
+  }
+
+  ExtractedFieldsComponent --> ConfidenceBadgeComponent : renders per row
+  ConfidenceSummaryComponent --> ConfidenceService : injects
+  ExtractedFieldsComponent --> ConfidenceService : injects
+}
+
+ConfidenceService --> ConfidenceController : HTTP
+
+@enduml

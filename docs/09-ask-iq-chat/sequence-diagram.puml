@@ -1,0 +1,107 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Ask IQ Chat sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 200
+
+title Ask IQ Chat -- Sequence Diagram
+
+actor User
+participant "Angular\nChatDrawerComponent" as Drawer
+participant "Angular\nChatService" as NgChat
+participant "ASP.NET Core\nChatController" as Ctrl
+participant "ChatService" as Svc
+participant "ChatContextBuilder" as Ctx
+participant "IStorageProvider" as Store
+participant "IRagService" as Rag
+participant "IPolicyService" as Policy
+participant "IGlossaryService" as Glossary
+participant "IOpenAIClient" as LLM
+
+== User Sends Message ==
+
+User -> Drawer : Type question in Ask IQ\n"What are the risk factors\nfor this applicant's BMI?"
+Drawer -> NgChat : sendMessage(applicationId, request)
+NgChat -> Ctrl : POST /api/applications/{id}/chat\n{ Message, ConversationId, Persona }
+Ctrl -> Svc : SendMessageAsync(request, ct)
+
+== Context Assembly ==
+
+Svc -> Ctx : BuildContextAsync(contextRequest, ct)
+
+Ctx -> Store : LoadMetadataAsync(applicationId)
+Store --> Ctx : Application metadata\n(extracted fields, LLM outputs,\nrisk analysis, document excerpt)
+
+Ctx -> Glossary : GetGlossaryAsync(persona)
+Glossary --> Ctx : Glossary terms\n(abbreviations + definitions)
+
+alt RAG Enabled
+  Ctx -> Ctx : Augment query with first\n~500 chars of document excerpt
+  Ctx -> Rag : SearchPoliciesAsync(\naugmentedQuery, persona, topK)
+  Rag -> Rag : Embed query\n+ hybrid search\n(vector + keyword)
+  Rag --> Ctx : Top-K policy chunks\nwith similarity scores
+else RAG Unavailable / Disabled
+  Ctx -> Policy : GetPoliciesAsync(persona)
+  Policy --> Ctx : Full policy text\n(fallback injection)
+end
+
+Ctx -> Ctx : Compose system prompt:\n1. Persona role definition\n2. Glossary terms\n3. Policy context (RAG chunks or full)\n4. Application summary + fields\n5. LLM analysis outputs\n6. Response format instructions
+
+Ctx --> Svc : ChatContext\n(systemPrompt, tokenCount)
+
+== LLM Call ==
+
+Svc -> Svc : Assemble messages:\n1. system: composed prompt\n2. history: prior messages\n3. user: new question
+
+Svc -> LLM : ChatCompletionAsync(\nmessages,\ntemperature=0.3,\nmaxTokens=1200)
+LLM --> Svc : Raw response text
+
+== Response Processing ==
+
+Svc -> Svc : ChatResponseParser.Parse(\nrawResponse)
+
+alt Plain Text
+  Svc -> Svc : FormatType = PlainText
+else JSON Structure Detected
+  Svc -> Svc : Deserialize as one of:\n- RiskFactors\n- PolicyList\n- Recommendation\n- Comparison
+end
+
+Svc -> Store : Save messages to conversation\n{ userMsg, assistantMsg,\ntimestamp, conversationId }
+
+Svc --> Ctrl : ChatResponse\n{ Response, FormatType,\nConversationId }
+
+Ctrl --> NgChat : 200 OK (JSON)
+NgChat --> Drawer : ChatResponse
+
+== Structured Response Rendering ==
+
+alt PlainText
+  Drawer --> User : Render markdown text
+else RiskFactors
+  Drawer --> User : Severity-coded risk factor cards\n(red / amber / green)
+else PolicyList
+  Drawer --> User : Expandable policy cards\nwith relevance scores
+else Recommendation
+  Drawer --> User : Decision card\n(Approve / Defer / Decline)
+else Comparison
+  Drawer --> User : Side-by-side comparison table
+end
+
+== Conversation History ==
+
+User -> Drawer : View conversation list
+Drawer -> NgChat : getConversations(applicationId)
+NgChat -> Ctrl : GET /api/applications/{id}/conversations
+Ctrl -> Svc : GetConversationsAsync(applicationId, ct)
+Svc -> Store : LoadMetadataAsync(applicationId)
+Store --> Svc : Conversations list
+Svc --> Ctrl : List<ConversationSummary>
+Ctrl --> NgChat : 200 OK (JSON)
+NgChat --> Drawer : ConversationSummary[]
+Drawer --> User : Show conversation list\nwith timestamps
+
+@enduml

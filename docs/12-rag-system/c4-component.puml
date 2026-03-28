@@ -1,0 +1,60 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for RAG System
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Component Diagram (RAG System)
+
+Person(user, "User")
+Person(admin, "Admin")
+
+Container_Boundary(angular, "Angular SPA") {
+  Component(chatComp, "ChatComponent", "Standalone Component", "Chat interface where users submit questions and view AI answers with citations.")
+  Component(ragPanel, "RagContextPanelComponent", "Standalone Component", "Side panel displaying RAG citation details for the current response.")
+  Component(indexComp, "PolicyIndexComponent", "Standalone Component", "Admin view for triggering and monitoring persona-specific indexing jobs.")
+  Component(ngRagSvc, "RagAdminService", "Injectable Service", "HTTP client for RAG admin endpoints: status, trigger index, progress.")
+}
+
+Container_Boundary(dotnet, "ASP.NET Core Backend") {
+  Component(ragCtrl, "RagController", "ApiController", "REST endpoints: POST /api/rag/index, GET /api/rag/status, POST /api/rag/search.")
+  Component(ragSvc, "RagService", "IRagService impl", "Top-level orchestrator: lazy init, query delegation, fallback to full policy injection.")
+  Component(searchFactory, "PolicySearchServiceFactory", "IPolicySearchServiceFactory impl", "Resolves persona-specific IPolicySearchService variant at runtime.")
+  Component(searchSvc, "PolicySearchService", "IPolicySearchService impl", "Hybrid retrieval: semantic vector search + keyword search, merge and re-rank.")
+  Component(indexerSvc, "PolicyIndexer", "IPolicyIndexer impl", "Chunks policy documents, generates embeddings in batch, persists via repository.")
+  Component(contextBuilder, "RagContextBuilder", "IRagContextBuilder impl", "Greedy token-budget fill, citation formatting [1] [2], returns RagContext.")
+  Component(embedSvc, "EmbeddingService", "IEmbeddingService impl", "Azure OpenAI Embeddings wrapper with IMemoryCache layer.")
+  Component(chunkRepo, "PolicyChunkRepository", "IPolicyChunkRepository impl", "EF Core data access: vector cosine search, full-text search, bulk insert.")
+  Component(ragSettings, "RagSettings", "IOptions<T>", "Typed config: Enabled, TopK, SimilarityThreshold, EmbeddingModel, token budgets.")
+}
+
+ContainerDb(db, "PostgreSQL + pgvector", "policy_chunks table")
+System_Ext(azureOai, "Azure OpenAI", "Embeddings + Chat APIs")
+
+Rel(user, chatComp, "Submits question")
+Rel(admin, indexComp, "Triggers indexing")
+Rel(chatComp, ragPanel, "Passes citations")
+Rel(indexComp, ngRagSvc, "triggerIndex()")
+Rel(ngRagSvc, ragCtrl, "HTTP requests", "JSON / HTTPS")
+
+Rel(ragCtrl, ragSvc, "QueryAsync()")
+Rel(ragCtrl, indexerSvc, "IndexAllAsync()")
+Rel(ragSvc, searchFactory, "Create(personaId)")
+Rel(searchFactory, searchSvc, "Returns persona variant")
+Rel(ragSvc, contextBuilder, "BuildAsync(results)")
+Rel(searchSvc, embedSvc, "GenerateAsync(query)")
+Rel(searchSvc, chunkRepo, "SearchByVectorAsync()\nSearchByKeywordAsync()")
+Rel(indexerSvc, embedSvc, "GenerateBatchAsync()")
+Rel(indexerSvc, chunkRepo, "BulkInsertAsync()\nDeleteByPolicyAsync()")
+Rel(ragSvc, ragSettings, "Reads config")
+Rel(searchSvc, ragSettings, "Reads config")
+Rel(indexerSvc, ragSettings, "Reads config")
+Rel(contextBuilder, ragSettings, "Reads config")
+Rel(embedSvc, ragSettings, "Reads config")
+Rel(embedSvc, azureOai, "POST /embeddings", "HTTPS")
+Rel(chunkRepo, db, "EF Core / Npgsql")
+
+@enduml

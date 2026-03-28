@@ -1,0 +1,121 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Mortgage Underwriting sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+
+title Mortgage Underwriting -- Sequence Diagram
+
+actor Underwriter as User
+participant "Angular\nMortgageWorkbench\nComponent" as Workbench
+participant "Angular\nMortgageService" as NgSvc
+participant "ASP.NET Core\nMortgageController" as Ctrl
+participant "MortgageService" as Svc
+participant "MortgageProcessor" as Proc
+participant "Azure AI\nContent Understanding" as CU
+participant "IncomeCalculator" as Income
+participant "LoanCalculator" as Loan
+participant "StressTestService" as Stress
+participant "MortgagePolicyEngine" as Policy
+participant "MortgageRiskAnalyzer" as Risk
+
+== Document Upload & Classification ==
+
+User -> Workbench : Upload mortgage documents\n(T4, pay stubs, appraisal, etc.)
+Workbench -> NgSvc : uploadDocuments(files)
+NgSvc -> Ctrl : POST /api/mortgage/upload\n(multipart: files)
+Ctrl -> Svc : ProcessApplicationAsync(request, ct)
+
+loop For each uploaded document
+  Svc -> Proc : ClassifyDocumentAsync(stream, ct)
+  Proc -> CU : Submit for classification
+  CU --> Proc : DocumentType\n(T4 / PayStub / AppraisalReport / ...)
+  Proc --> Svc : DocumentType
+end
+
+== Field Extraction & Aggregation ==
+
+loop For each classified document
+  Svc -> Proc : ExtractFieldsAsync(stream, docType, ct)
+  Proc -> CU : Extract fields with\ndocType-specific analyzer
+  CU --> Proc : Fields with confidence\nscores and bounding regions
+  Proc -> Proc : Normalize currency (CAD)\nand date formats
+  Proc -> Proc : Attach FieldProvenance\n(source doc, page, region)
+  Proc --> Svc : IReadOnlyList<ExtractedMortgageField>
+end
+
+Svc -> Proc : AggregateAsync(allFieldSets, ct)
+Proc --> Svc : MortgageFieldSet\n(unified cross-document fields)
+
+== Income & Loan Calculations ==
+
+Svc -> Income : CalculateGrossIncomeAsync(fieldSet, ct)
+Income -> Income : Evaluate employment type\n(salaried / self-employed / etc.)
+Income -> Income : Assess income stability
+Income --> Svc : IncomeResult\n(gross, net, stability score)
+
+Svc -> Loan : Calculate(principal, rate, amortizationMonths)
+Loan --> Svc : LoanCalculation\n(payment, interest, projections)
+
+Svc -> Loan : CalculateGds(loan, tax, heating, condo, grossIncome)
+Loan --> Svc : GdsRatio (value vs 39% max)
+
+Svc -> Loan : CalculateTds(gds, otherDebt, grossIncome)
+Loan --> Svc : TdsRatio (value vs 44% max)
+
+Svc -> Loan : CalculateLtv(loanAmount, propertyValue)
+Loan --> Svc : LtvRatio\n(conventional / insured classification)
+
+== Stress Test (OSFI B-20) ==
+
+Svc -> Stress : RunStressTestAsync(application, ct)
+Stress -> Stress : MortgageQualificationRate.Determine(\ncontractRate, floorRate: 5.25%)
+note right
+  MQR = max(contract + 2%, 5.25%)
+end note
+Stress -> Stress : Recalculate payment at MQR
+Stress -> Stress : Recalculate GDS & TDS\nat stressed payment
+Stress --> Svc : StressTestResult\n(isAffordable, B20Compliant)
+
+== Compliance Check ==
+
+Svc -> Policy : EvaluateComplianceAsync(application, ct)
+Policy -> Policy : Evaluate OSFI B-20 rules:\n- GDS <= 39%\n- TDS <= 44%\n- LTV limits\n- Amortization limits\n- MQR stress test pass
+Policy -> Policy : Evaluate underwriting\nguidelines
+Policy -> Policy : Calculate compliance score
+Policy --> Svc : ComplianceResult\n(isCompliant, score, violations)
+
+== Risk Assessment ==
+
+Svc -> Risk : AssessRiskAsync(application, ct)
+Risk -> Risk : Assess credit risk\n(score, history)
+Risk -> Risk : Assess income stability risk\n(employment type, tenure)
+Risk -> Risk : Assess LTV risk
+Risk -> Risk : Assess amortization risk
+Risk -> Risk : Assess market risk
+Risk -> Risk : Compute overall risk level
+Risk --> Svc : MortgageRiskAssessment\n(overall level, per-factor scores, flags)
+
+== Response ==
+
+Svc --> Ctrl : MortgageUnderwritingResult
+Ctrl --> NgSvc : 200 JSON
+NgSvc --> Workbench : UnderwritingResult
+
+== UI Rendering ==
+
+Workbench -> Workbench : Display classified documents\nwith type badges
+Workbench -> Workbench : Show extracted fields\nwith provenance links
+
+User -> Workbench : Select "Calculations" tab
+Workbench -> Workbench : Render CalculationsPanelComponent\n(GDS/TDS gauges, LTV, amortization)
+
+User -> Workbench : Select "Compliance" tab
+Workbench -> Workbench : Render CompliancePanelComponent\n(B-20 checklist, violations)
+
+User -> Workbench : Click "Property Deep Dive"
+Workbench -> Workbench : Open PropertyDeepDiveModalComponent\n(valuation, comparables, condition)
+
+@enduml

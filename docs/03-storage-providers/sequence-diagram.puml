@@ -1,0 +1,115 @@
+@startuml sequence-diagram
+scale max 1024 width
+
+title Storage Providers -- Sequence Diagrams (.NET 8)
+
+actor Client
+participant "ApiController" as API
+participant "IStorageProvider" as ISP
+participant "LocalStorageProvider\nor AzureBlobStorageProvider" as Provider
+database "Storage\n(Disk / Azure Blob)" as Store
+
+== File Upload Flow ==
+
+Client -> API : POST /api/applications/{appId}/files\n(multipart form data)
+activate API
+
+API -> ISP : SaveFileAsync(appId, filename, stream, ct)
+activate ISP
+ISP -> Provider : SaveFileAsync(appId, filename, stream, ct)
+activate Provider
+
+Provider -> Provider : Build path:\napplications/{appId}/files/{filename}
+Provider -> Store : Write stream to path
+activate Store
+Store --> Provider : OK
+deactivate Store
+
+Provider --> ISP : storedPath
+deactivate Provider
+ISP --> API : storedPath
+deactivate ISP
+
+API --> Client : 201 Created { path }
+deactivate API
+
+== File Retrieval Flow ==
+
+Client -> API : GET /api/applications/{appId}/files/{filename}
+activate API
+
+API -> ISP : LoadFileAsync(appId, filename, ct)
+activate ISP
+ISP -> Provider : LoadFileAsync(appId, filename, ct)
+activate Provider
+
+Provider -> Store : Read from\napplications/{appId}/files/{filename}
+activate Store
+
+alt File exists
+  Store --> Provider : Stream
+  Provider --> ISP : Stream
+  ISP --> API : Stream
+  API --> Client : 200 OK (file bytes)
+else File not found
+  Store --> Provider : null / ResourceNotFound
+  deactivate Store
+  Provider --> ISP : null
+  deactivate Provider
+  ISP --> API : null
+  deactivate ISP
+  API --> Client : 404 Not Found
+end
+deactivate API
+
+== Metadata Save / Load ==
+
+Client -> API : PUT /api/applications/{appId}/metadata
+activate API
+
+API -> ISP : SaveMetadataAsync(appId, metadata, ct)
+activate ISP
+ISP -> Provider : SaveMetadataAsync(appId, metadata, ct)
+activate Provider
+
+Provider -> Provider : Serialize to JSON
+Provider -> Store : Write applications/{appId}/metadata.json\n(atomic rename for local)
+activate Store
+Store --> Provider : OK
+deactivate Store
+
+Provider --> ISP : completed
+deactivate Provider
+ISP --> API : completed
+deactivate ISP
+API --> Client : 204 No Content
+deactivate API
+
+...
+
+Client -> API : GET /api/applications/{appId}/metadata
+activate API
+
+API -> ISP : LoadMetadataAsync(appId, ct)
+activate ISP
+ISP -> Provider : LoadMetadataAsync(appId, ct)
+activate Provider
+
+Provider -> Store : Read applications/{appId}/metadata.json
+activate Store
+Store --> Provider : JSON bytes (or not found)
+deactivate Store
+Provider -> Provider : Deserialize JSON
+Provider --> ISP : JsonDocument? (or null)
+deactivate Provider
+ISP --> API : JsonDocument? (or null)
+deactivate ISP
+
+alt Metadata found
+  API --> Client : 200 OK { ... }
+else Not found
+  API --> Client : 404 Not Found
+end
+deactivate API
+
+@enduml

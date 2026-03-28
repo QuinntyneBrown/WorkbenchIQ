@@ -1,0 +1,106 @@
+@startuml sequence-diagram
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- Large Document Processing sequence diagram
+' Target: .NET 8 (ASP.NET Core) + Angular 17+
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+scale max 1024 width
+
+title Large Document Processing -- Sequence Diagram
+
+actor User
+participant "Angular\nUploadComponent" as Upload
+participant "Angular\nLargeDocumentService" as NgSvc
+participant "ASP.NET Core\nDocumentController" as Ctrl
+participant "LargeDocument\nProcessor" as Proc
+participant "Document\nChunker" as Chunker
+participant "Progressive\nSummarizer" as Summarizer
+participant "LLM\n(Azure OpenAI)" as LLM
+
+== Document Upload & Size Detection ==
+
+User -> Upload : Upload document
+Upload -> Ctrl : POST /api/documents/upload
+Ctrl -> Ctrl : Extract markdown via\nContent Understanding
+Ctrl -> Proc : DetectProcessingMode(markdown)
+Proc -> Proc : Encode UTF-8,\ncompare size vs 1500 KB
+
+alt Size < 1500 KB
+  Proc --> Ctrl : ProcessingMode.Standard
+  Ctrl --> Upload : 200 { mode: "standard" }
+  note right: Standard pipeline --\nfull markdown used directly
+else Size >= 1500 KB
+  Proc --> Ctrl : ProcessingMode.LargeDocument
+  Ctrl -> Proc : BuildCondensedContextAsync(markdown, cuResult)
+end
+
+== Page Extraction ==
+
+Proc -> Chunker : ExtractPages(markdown)
+Chunker -> Chunker : Regex split on\npage headers
+Chunker --> Proc : IReadOnlyList<DocumentPage>
+Proc -> Proc : GetDocumentStats(markdown)
+
+alt <= 20 pages or useProgressive = false
+  note right of Proc: Sampling path
+  Proc -> Chunker : SelectKeyPages(pages, max=15)
+  Chunker -> Chunker : First 5 pages +\nkeyword-scored pages
+  Chunker --> Proc : selected pages
+  Proc -> Summarizer : SummarizePagesAsync(selected)
+  Summarizer -> LLM : Single summarization call
+  LLM --> Summarizer : summary text
+  Summarizer --> Proc : summary
+else > 20 pages and progressive
+  note right of Proc: Progressive path
+  Proc -> Chunker : CreateBatches(pages, 20)
+  Chunker --> Proc : batches
+
+  == Phase 1: Batch Summarization ==
+
+  loop For each batch (with 500 ms delay)
+    Proc -> Summarizer : SummarizeBatchAsync(batch, batchNum, totalBatches)
+    Summarizer -> LLM : Batch prompt\n(pages truncated to 8000 chars each)
+    LLM --> Summarizer : batch summary
+    Summarizer --> Proc : BatchSummary
+    Proc -> Proc : await Task.Delay(500)
+  end
+
+  == Phase 2: Consolidation ==
+
+  Proc -> Proc : Concatenate batch summaries
+  alt Combined < 60 000 chars
+    Proc -> Proc : Use combined\nsummaries directly
+  else Combined >= 60 000 chars
+    Proc -> Summarizer : ConsolidateAsync(combinedSummaries)
+    Summarizer -> LLM : Consolidation prompt
+    LLM --> Summarizer : consolidated summary
+    Summarizer --> Proc : final summary
+  end
+end
+
+== Context Assembly ==
+
+Proc -> Proc : Format CU extracted fields
+Proc -> Proc : Combine fields + summary\n+ metadata footer
+Proc --> Ctrl : CondensedContextResult
+
+Ctrl --> Upload : 200 { mode: "large_document",\ncondensedContext, stats, batchSummaries }
+Upload -> NgSvc : Update signals
+NgSvc --> User : Show large-doc banner\nwith stats
+
+== Chat Using Condensed Context ==
+
+User -> NgSvc : Send chat message
+NgSvc -> Ctrl : POST /api/chat\n{ message, documentId }
+Ctrl -> Ctrl : Check ProcessingMode
+alt LargeDocument
+  Ctrl -> Ctrl : Use condensedContext\nas document context
+else Standard
+  Ctrl -> Ctrl : Use full markdown\n(or truncated)
+end
+Ctrl -> LLM : Chat prompt\nwith appropriate context
+LLM --> Ctrl : response
+Ctrl --> NgSvc : chat response
+NgSvc --> User : Display answer
+
+@enduml

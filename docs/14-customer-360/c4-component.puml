@@ -1,0 +1,46 @@
+@startuml c4-component
+' ---------------------------------------------------------------------------
+' WorkbenchIQ -- C4 Component diagram for Customer 360
+' ---------------------------------------------------------------------------
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+scale max 1024 width
+
+title WorkbenchIQ -- Component Diagram (Customer 360)
+
+Person(operator, "Operator")
+
+Container_Boundary(angular, "Angular SPA") {
+  Component(listComp, "CustomerListComponent", "Standalone Component", "Searchable table of all customer profiles. Click navigates to detail view.")
+  Component(detailComp, "CustomerDetailComponent", "Standalone Component", "Orchestrates the Customer 360 detail page with child components.")
+  Component(profileHeader, "CustomerProfileHeaderComponent", "Standalone Component", "Displays customer name, contact info, risk tier badge, and tags.")
+  Component(timeline, "CustomerTimelineComponent", "Standalone Component", "Renders cross-persona journey events in reverse-chronological order.")
+  Component(personaCard, "PersonaSummaryCardComponent", "Standalone Component", "Shows per-persona application count, latest status, risk level, and metrics.")
+  Component(riskBanner, "RiskCorrelationBannerComponent", "Standalone Component", "Severity-coded alert banner for cross-persona risk correlations.")
+  Component(ngSvc, "Customer360Service", "Injectable Service", "HTTP client wrapper for all Customer 360 API calls.")
+}
+
+Container_Boundary(dotnet, "ASP.NET Core Backend") {
+  Component(ctrl, "Customer360Controller", "ApiController", "REST endpoints: GET/POST /api/customers, GET/DELETE /api/customers/{id}.")
+  Component(svc, "Customer360Service", "ICustomer360Service impl", "Assembles Customer 360 view: loads profile, journey, risk data; builds persona summaries; computes active claims.")
+  Component(repo, "CustomerRepository", "ICustomerRepository impl", "Reads and writes JSON files from local filesystem or Azure Blob Storage.")
+  Component(opts, "Customer360Options", "IOptions<T>", "Typed configuration: storage root and provider selection.")
+}
+
+Rel(operator, listComp, "Browses customers")
+Rel(operator, detailComp, "Views customer detail")
+Rel(listComp, ngSvc, "listCustomers()")
+Rel(detailComp, ngSvc, "getCustomer360()")
+Rel(detailComp, profileHeader, "Renders")
+Rel(detailComp, timeline, "Renders")
+Rel(detailComp, personaCard, "Renders")
+Rel(detailComp, riskBanner, "Renders")
+
+Rel(ngSvc, ctrl, "HTTP requests", "JSON / HTTPS")
+Rel(ctrl, svc, "Delegates business logic")
+Rel(svc, repo, "Reads / writes customer data")
+Rel(svc, opts, "Reads configuration")
+Rel(repo, opts, "Reads storage root")
+
+@enduml
